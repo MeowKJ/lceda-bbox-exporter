@@ -1,0 +1,11 @@
+lceda-bbox-exporter
+Copyright 2026 MeowKJ
+
+Project structure and build tooling are adapted from lceda-decoupling-meow
+and the JLCEDA pro-api-sdk.
+
+JLCEDA pro-api-sdk
+Copyright 2024 JLCEDA
+https://github.com/easyeda/pro-api-sdk
+
+Licensed under the Apache License, Version 2.0.

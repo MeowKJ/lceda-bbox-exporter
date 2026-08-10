@@ -1,0 +1,6 @@
+node_modules/
+dist/
+build/dist/
+.npm-cache/
+.eslintcache
+debug.log

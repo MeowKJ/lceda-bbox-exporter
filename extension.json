@@ -1,0 +1,56 @@
+{
+	"name": "lceda-bbox-exporter",
+	"uuid": "b11c77862a9b40c1b7200c6de52ece57",
+	"displayName": "BBox 导出喵",
+	"description": "使用嘉立创 EDA 官方 API 导出选中图元或当前 PCB 全部器件的包围盒坐标与尺寸。",
+	"version": "0.1.0",
+	"publisher": "MeowKJ",
+	"engines": {
+		"eda": "^3.0.0"
+	},
+	"license": "Apache-2.0",
+	"repository": {
+		"type": "github",
+		"url": "https://github.com/MeowKJ/lceda-bbox-exporter"
+	},
+	"categories": "PCB",
+	"keywords": [
+		"BBox",
+		"PCB",
+		"Footprint",
+		"Export",
+		"CSV"
+	],
+	"homepage": "https://github.com/MeowKJ/lceda-bbox-exporter",
+	"bugs": "https://github.com/MeowKJ/lceda-bbox-exporter/issues",
+	"activationEvents": {
+		"onStartupFinished": true
+	},
+	"entry": "./dist/index",
+	"dependentExtensions": {},
+	"headerMenus": {
+		"pcb": [
+			{
+				"id": "lceda-bbox-exporter-menu",
+				"title": "BBox 导出喵",
+				"menuItems": [
+					{
+						"id": "lceda-bbox-exporter-selected",
+						"title": "导出选中图元 BBox",
+						"registerFn": "exportSelectedBBox"
+					},
+					{
+						"id": "lceda-bbox-exporter-components",
+						"title": "导出全部器件 BBox",
+						"registerFn": "exportAllComponentBBox"
+					},
+					{
+						"id": "lceda-bbox-exporter-about",
+						"title": "关于 BBox 导出喵",
+						"registerFn": "about"
+					}
+				]
+			}
+		]
+	}
+}
