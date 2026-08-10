@@ -21,6 +21,7 @@ test('converts mil bbox to millimetres and derives size', () => {
 		designator: '',
 		componentName: '',
 		footprintName: '',
+		model3DName: '',
 		rotation: '',
 		minX: -2.54,
 		minY: -1.27,
@@ -28,6 +29,10 @@ test('converts mil bbox to millimetres and derives size', () => {
 		maxY: 1.27,
 		width: 5.08,
 		height: 2.54,
+		xLength: 5.08,
+		yWidth: 2.54,
+		zHeight: '',
+		zHeightSource: 'unavailable',
 		unit: 'mm',
 	});
 });
@@ -43,6 +48,14 @@ test('CSV includes BOM and escapes names', () => {
 	assert.equal(csv.charCodeAt(0), 0xFEFF);
 	assert.match(csv, /"A,""B"""/);
 	assert.match(csv, /25\.4/);
+	assert.match(csv, /X-Length of Bottom Edge on Board \(Spacing Line\)/);
+	assert.match(csv, /Y-Width,Z-Height/);
+});
+
+test('derives Z height only from an explicit 3D model H parameter', () => {
+	assert.equal(api.modelNameToZHeightMm('PQFP-128_L14.0-W20.0-H3.20'), 3.2);
+	assert.equal(api.modelNameToZHeightMm('C0201_L0.6-W0.3-H0.3'), 0.3);
+	assert.equal(api.modelNameToZHeightMm('unrelated-model'), '');
 });
 
 test('JSON records coordinate system and unit', () => {
@@ -50,4 +63,11 @@ test('JSON records coordinate system and unit', () => {
 	assert.equal(parsed.schemaVersion, 1);
 	assert.equal(parsed.coordinateSystem, 'cartesian');
 	assert.equal(parsed.unit, 'mm');
+});
+
+test('exposes one save-dialog command for each export format', () => {
+	assert.equal(typeof api.exportSelectedBBoxCsv, 'function');
+	assert.equal(typeof api.exportSelectedBBoxJson, 'function');
+	assert.equal(typeof api.exportAllComponentBBoxCsv, 'function');
+	assert.equal(typeof api.exportAllComponentBBoxJson, 'function');
 });
