@@ -22,7 +22,7 @@ npm install
 npm run check
 ```
 
-扩展包生成于 `build/dist/lceda-bbox-exporter_v0.8.1.eext`。
+扩展包生成于 `build/dist/lceda-bbox-exporter_v0.8.2.eext`。
 
 在嘉立创 EDA 专业版中进入“高级 → 扩展管理器 → 导入”，选择生成的 `.eext` 文件。
 

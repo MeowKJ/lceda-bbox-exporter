@@ -1,6 +1,6 @@
 {
 	"name": "lceda-bbox-exporter",
-	"version": "0.8.1",
+	"version": "0.8.2",
 	"description": "嘉立创 EDA 专业版器件与图元 BBox 导出扩展",
 	"author": "MeowKJ",
 	"license": "Apache-2.0",

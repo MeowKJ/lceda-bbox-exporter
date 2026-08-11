@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.2
+
+- 修正嵌入式 PCB 画布场景：从同源 iframe 获取 `MSG_BUS_PCB` 后安装右键 Hook。
+
 ## 0.8.1
 
 - 修正 PCB 画布 Hook 的总线定位：使用 3.2.149 客户端实际暴露的 `MSG_BUS_PCB`。
