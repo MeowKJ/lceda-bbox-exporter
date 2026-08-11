@@ -142,7 +142,7 @@ test('injects and restores the PCB canvas context-menu hook', () => {
 	const runtimeContext = vm.createContext({
 		Blob,
 		console,
-		PCB: { gVars: { messageBus: bus } },
+		MSG_BUS_PCB: bus,
 		setInterval: () => 1,
 		clearInterval: () => {},
 	});

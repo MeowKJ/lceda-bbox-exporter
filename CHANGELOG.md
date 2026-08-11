@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.1
+
+- 修正 PCB 画布 Hook 的总线定位：使用 3.2.149 客户端实际暴露的 `MSG_BUS_PCB`。
+
 ## 0.8.0
 
 - 新增 PCB 画布器件右键中的「导出选中 PCB 器件 BBox CSV」入口。

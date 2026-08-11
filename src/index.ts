@@ -94,11 +94,8 @@ interface PcbContextMenuTimerState {
 }
 
 interface PcbRuntime {
-	PCB?: {
-		gVars?: {
-			messageBus?: InternalMessageBus;
-		};
-	};
+	/** 嘉立创 PCB 3.2.149 暴露的内部桥接总线。 */
+	MSG_BUS_PCB?: InternalMessageBus;
 	[PCB_CONTEXT_MENU_HOOK_KEY]?: PcbContextMenuHookState;
 	[PCB_CONTEXT_MENU_TIMER_KEY]?: PcbContextMenuTimerState;
 }
@@ -256,7 +253,7 @@ export function appendPcbContextMenu(menu: PcbContextMenuState | undefined): Pcb
 /** 安装 PCB 画布右键菜单 Hook；内部接口不可用时保留现有稳定入口。 */
 export function installPcbContextMenuHook(): boolean {
 	const runtime = globalThis as unknown as PcbRuntime;
-	const bus = runtime.PCB?.gVars?.messageBus;
+	const bus = runtime.MSG_BUS_PCB;
 	if (!bus || typeof bus.publish !== 'function')
 		return false;
 
@@ -299,7 +296,7 @@ function stopPcbContextMenuHook(): void {
 		delete runtime[PCB_CONTEXT_MENU_TIMER_KEY];
 	}
 	const hook = runtime[PCB_CONTEXT_MENU_HOOK_KEY];
-	const bus = runtime.PCB?.gVars?.messageBus;
+	const bus = runtime.MSG_BUS_PCB;
 	if (hook?.version === extensionConfig.version && bus) {
 		bus.publish = hook.originalPublish;
 		delete runtime[PCB_CONTEXT_MENU_HOOK_KEY];
