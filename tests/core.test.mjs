@@ -69,3 +69,55 @@ test('exposes CSV-only export commands', () => {
 	assert.equal(typeof api.exportCurrentFootprintLibraryBBoxCsv, 'function');
 	assert.equal(api.rowsToJson, undefined);
 });
+
+test('injects the schematic canvas context menu only for selected components', () => {
+	const unchanged = { part: [{ text: '编辑属性' }] };
+	assert.deepEqual(
+		JSON.parse(JSON.stringify(api.appendSchematicContextMenu(unchanged, { cmdKey: 'wire', selectedIds: ['wire-1'] }))),
+		unchanged,
+	);
+
+	const injected = api.appendSchematicContextMenu(
+		{ part: [{ text: '编辑属性' }, 'menu-sep', { text: '删除' }] },
+		{ cmdKey: 'part', selectedIds: ['u1'], target: 'part' },
+	);
+	const normalized = JSON.parse(JSON.stringify(injected));
+	assert.equal(normalized.part.filter(item => item?.text === 'BBox 尺寸导出器').length, 1);
+	assert.equal(normalized.part[2].submenu[0].text, '导出所选原理图图元 BBox CSV');
+	assert.match(normalized.part[2].submenu[0].cmd, /exportSelectedSchematicBBoxCsv/);
+	assert.deepEqual(
+		JSON.parse(JSON.stringify(api.appendSchematicContextMenu(injected, { cmdKey: 'part', selectedIds: ['u1'] }))),
+		normalized,
+	);
+});
+
+test('hooks and restores the schematic message bus safely', () => {
+	const replies = [];
+	const bus = {
+		publish(topic, message) {
+			return { topic, message };
+		},
+		rpcReply(result, topic) {
+			replies.push({ result, topic });
+			return result;
+		},
+	};
+	const originalPublish = bus.publish;
+	const originalRpcReply = bus.rpcReply;
+	const runtimeContext = vm.createContext({
+		Blob,
+		console,
+		SCH: { gVars: { messageBus: bus } },
+		setInterval: () => 1,
+		clearInterval: () => {},
+	});
+	vm.runInContext(bundle, runtimeContext);
+	const hookedApi = runtimeContext.edaEsbuildExportName;
+	assert.equal(hookedApi.installSchematicContextMenuHook(), true);
+	bus.publish('showEditorContextMenu', { cmdKey: 'part', selectedIds: ['u1'] });
+	bus.rpcReply({ part: [{ text: '编辑属性' }] }, 'getContextMenu.menuData');
+	assert.equal(replies[0].result.part[0].text, 'BBox 尺寸导出器');
+	hookedApi.deactivate();
+	assert.equal(bus.publish, originalPublish);
+	assert.equal(bus.rpcReply, originalRpcReply);
+});

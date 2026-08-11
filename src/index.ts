@@ -10,6 +10,60 @@ function errorMessage(error: unknown): string {
 
 const COMPONENT_LIST_RIGHT_CLICK_MENU_ID = 'componentList';
 const SYMBOL_LIST_RIGHT_CLICK_MENU_ID = 'symbolList';
+const SCHEMATIC_CONTEXT_MENU_HOOK_KEY = '__lcedaBBoxExporterSchematicContextMenuHook';
+const SCHEMATIC_CONTEXT_MENU_TIMER_KEY = '__lcedaBBoxExporterSchematicContextMenuTimer';
+const SCHEMATIC_CONTEXT_MENU_COMMAND = `runRegisteredExtensionFn(${extensionConfig.uuid}.exportSelectedSchematicBBoxCsv)`;
+const SCHEMATIC_CONTEXT_MENU_TITLE = extensionConfig.displayName;
+const SCHEMATIC_CONTEXT_MENU_EXPORT_TITLE = '导出所选原理图图元 BBox CSV';
+const SCHEMATIC_CONTEXT_MENU_RETRY_MS = 1000;
+
+interface SchematicContextMenuState {
+	cmdKey?: string;
+	selectedIds?: Array<string>;
+	target?: string | Array<string>;
+}
+
+interface RawContextMenuItem {
+	cmd?: string;
+	icon?: string;
+	submenu?: Array<RawContextMenuItem | string | null>;
+	text?: string;
+}
+
+interface RawContextMenuData {
+	part?: Array<RawContextMenuItem | string | null>;
+	[key: string]: unknown;
+}
+
+type InternalPublish = (topic: string, message: unknown, ...args: Array<unknown>) => unknown;
+type InternalRpcReply = (result: unknown, replyTopic: string, ...args: Array<unknown>) => unknown;
+
+interface InternalMessageBus {
+	publish: InternalPublish;
+	rpcReply: InternalRpcReply;
+	[key: string]: unknown;
+}
+
+interface SchematicContextMenuHookState {
+	originalPublish: InternalPublish;
+	originalRpcReply: InternalRpcReply;
+	version: string;
+}
+
+interface SchematicContextMenuTimerState {
+	timer: ReturnType<typeof setInterval>;
+	version: string;
+}
+
+interface SchematicRuntime {
+	SCH?: {
+		gVars?: {
+			messageBus?: InternalMessageBus;
+		};
+	};
+	[SCHEMATIC_CONTEXT_MENU_HOOK_KEY]?: SchematicContextMenuHookState;
+	[SCHEMATIC_CONTEXT_MENU_TIMER_KEY]?: SchematicContextMenuTimerState;
+}
 
 async function registerRightClickMenus(): Promise<void> {
 	// 官方 API 当前只开放底部器件/符号/封装等列表项目的右键菜单，不能扩展画布右键。
@@ -29,6 +83,116 @@ async function registerRightClickMenus(): Promise<void> {
 			},
 		]),
 	]);
+}
+
+function isSchematicComponentContext(context: SchematicContextMenuState | undefined): boolean {
+	const target = Array.isArray(context?.target) ? context.target[0] : context?.target;
+	return (context?.cmdKey === 'part' || target === 'part')
+		&& (context?.selectedIds?.length ?? 0) > 0;
+}
+
+/**
+ * 将导出入口插到原理图画布中器件的右键菜单。
+ *
+ * 嘉立创公开 API 尚未开放原理图画布右键注册；这里采用与去耦喵相同的
+ * messageBus 菜单数据 Hook。菜单本身仍只调用本扩展的公开导出函数，读取
+ * BBox 仍完全使用 eda.sch_Primitive.getPrimitivesBBox()。
+ */
+export function appendSchematicContextMenu(
+	menuData: RawContextMenuData | undefined,
+	context: SchematicContextMenuState | undefined,
+): RawContextMenuData | undefined {
+	if (!menuData || !isSchematicComponentContext(context) || !Array.isArray(menuData.part))
+		return menuData;
+	if (menuData.part.some(item => typeof item === 'object' && item?.text === SCHEMATIC_CONTEXT_MENU_TITLE))
+		return menuData;
+
+	const part = [...menuData.part];
+	const extensionItem: RawContextMenuItem = {
+		icon: 'eda-component',
+		submenu: [{
+			cmd: SCHEMATIC_CONTEXT_MENU_COMMAND,
+			icon: 'eda-component',
+			text: SCHEMATIC_CONTEXT_MENU_EXPORT_TITLE,
+		}],
+		text: SCHEMATIC_CONTEXT_MENU_TITLE,
+	};
+	const firstSeparator = part.indexOf('menu-sep');
+	if (firstSeparator >= 0)
+		part.splice(firstSeparator + 1, 0, extensionItem, 'menu-sep');
+	else
+		part.unshift(extensionItem, 'menu-sep');
+	return { ...menuData, part };
+}
+
+/** 安装原理图画布右键菜单 Hook；客户端内部接口不可用时安全地返回 false。 */
+export function installSchematicContextMenuHook(): boolean {
+	const runtime = globalThis as unknown as SchematicRuntime;
+	const bus = runtime.SCH?.gVars?.messageBus;
+	if (!bus || typeof bus.publish !== 'function' || typeof bus.rpcReply !== 'function')
+		return false;
+
+	const existing = runtime[SCHEMATIC_CONTEXT_MENU_HOOK_KEY];
+	if (existing?.version === extensionConfig.version)
+		return true;
+	if (existing) {
+		bus.publish = existing.originalPublish;
+		bus.rpcReply = existing.originalRpcReply;
+	}
+
+	let latestContext: SchematicContextMenuState | undefined;
+	const originalPublish = bus.publish;
+	const originalRpcReply = bus.rpcReply;
+	bus.publish = function (topic, message, ...args) {
+		if (topic === 'showEditorContextMenu') {
+			latestContext = Array.isArray(message)
+				? message[0] as SchematicContextMenuState
+				: message as SchematicContextMenuState;
+		}
+		return originalPublish.call(this, topic, message, ...args);
+	};
+	bus.rpcReply = function (result, replyTopic, ...args) {
+		const nextResult = String(replyTopic).includes('menuData')
+			? appendSchematicContextMenu(result as RawContextMenuData, latestContext)
+			: result;
+		return originalRpcReply.call(this, nextResult, replyTopic, ...args);
+	};
+	runtime[SCHEMATIC_CONTEXT_MENU_HOOK_KEY] = {
+		originalPublish,
+		originalRpcReply,
+		version: extensionConfig.version,
+	};
+	return true;
+}
+
+function startSchematicContextMenuHook(): void {
+	installSchematicContextMenuHook();
+	const runtime = globalThis as unknown as SchematicRuntime;
+	const existingTimer = runtime[SCHEMATIC_CONTEXT_MENU_TIMER_KEY];
+	if (existingTimer?.version === extensionConfig.version)
+		return;
+	if (existingTimer)
+		clearInterval(existingTimer.timer);
+	runtime[SCHEMATIC_CONTEXT_MENU_TIMER_KEY] = {
+		timer: setInterval(installSchematicContextMenuHook, SCHEMATIC_CONTEXT_MENU_RETRY_MS),
+		version: extensionConfig.version,
+	};
+}
+
+function stopSchematicContextMenuHook(): void {
+	const runtime = globalThis as unknown as SchematicRuntime;
+	const timer = runtime[SCHEMATIC_CONTEXT_MENU_TIMER_KEY];
+	if (timer?.version === extensionConfig.version) {
+		clearInterval(timer.timer);
+		delete runtime[SCHEMATIC_CONTEXT_MENU_TIMER_KEY];
+	}
+	const hook = runtime[SCHEMATIC_CONTEXT_MENU_HOOK_KEY];
+	const bus = runtime.SCH?.gVars?.messageBus;
+	if (hook?.version === extensionConfig.version && bus) {
+		bus.publish = hook.originalPublish;
+		bus.rpcReply = hook.originalRpcReply;
+		delete runtime[SCHEMATIC_CONTEXT_MENU_HOOK_KEY];
+	}
 }
 
 function primitiveMetadata(primitive: IPCB_Primitive): Parameters<typeof makeBBoxRow>[0] {
@@ -121,9 +285,12 @@ export function activate(status?: 'onStartupFinished', arg?: string): void {
 	void eda.sys_HeaderMenu.replaceHeaderMenus(extensionConfig.headerMenus);
 	// 右键菜单 API 属于 beta，失败时保留顶部菜单入口，不影响导出功能。
 	void registerRightClickMenus().catch(error => console.warn(errorMessage(error)));
+	startSchematicContextMenuHook();
 }
 
-export function deactivate(): void {}
+export function deactivate(): void {
+	stopSchematicContextMenuHook();
+}
 
 export async function exportSelectedBBoxCsv(): Promise<void> {
 	await runExport(async () => {
