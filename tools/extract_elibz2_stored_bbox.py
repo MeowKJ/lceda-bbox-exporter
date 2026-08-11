@@ -160,7 +160,7 @@ def run_gui() -> int:
     root = tk.Tk()
     root.title('EasyEDA .elibz2 已存储 BBox 提取器')
     root.resizable(False, False)
-    root.geometry('760x220')
+    root.geometry('760x360')
     padding = {'padx': 10, 'pady': 6}
     input_var = tk.StringVar()
     output_var = tk.StringVar()
@@ -210,24 +210,17 @@ def run_gui() -> int:
 
     frame = tk.Frame(root, padx=12, pady=12)
     frame.pack(fill='both', expand=True)
-    tk.Label(frame, text='从嘉立创 .elibz2 读取已存储的 PART.BBOX（不手算封装外框）').grid(
-        row=0, column=0, columnspan=3, sticky='w', **padding,
-    )
-    tk.Button(frame, text='1. 选择 .elibz2 文件…', command=choose_input).grid(
-        row=1, column=0, columnspan=3, pady=(4, 8), sticky='ew',
-    )
-    tk.Label(frame, text='输入文件：').grid(row=2, column=0, sticky='w', **padding)
-    tk.Entry(frame, textvariable=input_var, width=58).grid(row=2, column=1, **padding)
-    tk.Button(frame, text='重新选择…', command=choose_input).grid(row=2, column=2, **padding)
-    tk.Label(frame, text='输出 CSV：').grid(row=3, column=0, sticky='w', **padding)
-    tk.Entry(frame, textvariable=output_var, width=58).grid(row=3, column=1, **padding)
-    tk.Button(frame, text='保存位置…', command=choose_output).grid(row=3, column=2, **padding)
-    tk.Button(frame, text='读取已存储 BBox 并导出 CSV', command=export).grid(
-        row=4, column=1, pady=(12, 6), sticky='e',
-    )
-    tk.Label(frame, textvariable=result_var, wraplength=620, justify='left').grid(
-        row=5, column=0, columnspan=3, sticky='w', **padding,
-    )
+    tk.Label(frame, text='从嘉立创 .elibz2 读取已存储的 PART.BBOX', anchor='w').pack(fill='x', pady=(0, 4))
+    tk.Label(frame, text='不手算封装外框；缺少已存储 BBox 时会明确提示。', anchor='w').pack(fill='x', pady=(0, 12))
+    tk.Button(frame, text='1. 选择 .elibz2 文件…', command=choose_input, height=2).pack(fill='x', pady=(0, 12))
+    tk.Label(frame, text='输入文件', anchor='w').pack(fill='x')
+    tk.Entry(frame, textvariable=input_var, relief='sunken', bd=1).pack(fill='x', pady=(2, 6))
+    tk.Button(frame, text='重新选择文件…', command=choose_input).pack(anchor='e', pady=(0, 12))
+    tk.Label(frame, text='输出 CSV', anchor='w').pack(fill='x')
+    tk.Entry(frame, textvariable=output_var, relief='sunken', bd=1).pack(fill='x', pady=(2, 6))
+    tk.Button(frame, text='选择保存位置…', command=choose_output).pack(anchor='e', pady=(0, 12))
+    tk.Button(frame, text='2. 读取已存储 BBox 并导出 CSV', command=export, height=2).pack(fill='x', pady=(2, 10))
+    tk.Label(frame, textvariable=result_var, wraplength=700, justify='left', anchor='w').pack(fill='x')
     root.mainloop()
     return 0
 
