@@ -138,11 +138,22 @@ test('injects and restores the PCB canvas context-menu hook', () => {
 		},
 		rpcReply() {},
 	};
+	const childBus = {
+		publish(topic, message) {
+			published.push({ topic, message });
+		},
+		rpcReply() {},
+	};
 	const originalPublish = bus.publish;
+	const originalChildPublish = childBus.publish;
+	const childFrame = { frames: [], MSG_BUS_PCB: childBus };
+	const rootFrame = { frames: [childFrame] };
+	rootFrame.top = rootFrame;
 	const runtimeContext = vm.createContext({
 		Blob,
 		console,
 		MSG_BUS_PCB: bus,
+		window: rootFrame,
 		setInterval: () => 1,
 		clearInterval: () => {},
 	});
@@ -150,9 +161,12 @@ test('injects and restores the PCB canvas context-menu hook', () => {
 	const hookedApi = runtimeContext.edaEsbuildExportName;
 	assert.equal(hookedApi.installPcbContextMenuHook(), true);
 	bus.publish('rightClickPcbMenu', { filter: [{ cmd: 'DELETE', name: '删除' }] });
+	childBus.publish('rightClickPcbMenu', { filter: [{ cmd: 'DELETE', name: '删除' }] });
 	assert.equal(published[0].message.filter[0].name, '导出选中 PCB 器件 BBox CSV');
+	assert.equal(published[1].message.filter[0].name, '导出选中 PCB 器件 BBox CSV');
 	hookedApi.deactivate();
 	assert.equal(bus.publish, originalPublish);
+	assert.equal(childBus.publish, originalChildPublish);
 });
 
 test('normalizes randomly rotated PCB components through one temporary 0-degree official bbox', async () => {

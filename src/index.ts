@@ -84,8 +84,10 @@ interface PcbContextMenuState {
 }
 
 interface PcbContextMenuHookState {
-	bus: InternalMessageBus;
-	originalPublish: InternalPublish;
+	hooks: Array<{
+		bus: InternalMessageBus;
+		originalPublish: InternalPublish;
+	}>;
 	version: string;
 }
 
@@ -101,19 +103,35 @@ interface PcbRuntime {
 	[PCB_CONTEXT_MENU_TIMER_KEY]?: PcbContextMenuTimerState;
 }
 
-function getPcbMessageBus(): InternalMessageBus | undefined {
+function getPcbMessageBuses(): Array<InternalMessageBus> {
 	const runtimes: Array<PcbRuntime> = [globalThis as unknown as PcbRuntime];
-	if (typeof window !== 'undefined') {
-		for (let index = 0; index < window.frames.length; index++) {
+	const visitedWindows = new Set<Window>();
+	const visitWindow = (candidate: Window): void => {
+		if (visitedWindows.has(candidate))
+			return;
+		visitedWindows.add(candidate);
+		runtimes.push(candidate as unknown as PcbRuntime);
+		for (let index = 0; index < candidate.frames.length; index++) {
 			try {
-				runtimes.push(window.frames[index] as unknown as PcbRuntime);
+				visitWindow(candidate.frames[index]);
 			}
 			catch {
 				// 忽略不可访问的跨域 frame；EDA PCB 画布与扩展为同源。
 			}
 		}
+	};
+	if (typeof window !== 'undefined') {
+		try {
+			// 扩展自身位于独立 iframe，PCB 文档可位于顶层窗口的任意嵌套 frame。
+			visitWindow(window.top ?? window);
+		}
+		catch {
+			visitWindow(window);
+		}
 	}
-	return runtimes.map(runtime => runtime.MSG_BUS_PCB).find(Boolean);
+	return [...new Set(runtimes
+		.map(runtime => runtime.MSG_BUS_PCB)
+		.filter((bus): bus is InternalMessageBus => bus !== undefined))];
 }
 
 async function registerRightClickMenus(): Promise<void> {
@@ -269,24 +287,29 @@ export function appendPcbContextMenu(menu: PcbContextMenuState | undefined): Pcb
 /** 安装 PCB 画布右键菜单 Hook；内部接口不可用时保留现有稳定入口。 */
 export function installPcbContextMenuHook(): boolean {
 	const runtime = globalThis as unknown as PcbRuntime;
-	const bus = getPcbMessageBus();
-	if (!bus || typeof bus.publish !== 'function')
+	const buses = getPcbMessageBuses().filter(bus => typeof bus.publish === 'function');
+	if (buses.length === 0)
 		return false;
 
-	const existing = runtime[PCB_CONTEXT_MENU_HOOK_KEY];
-	if (existing?.version === extensionConfig.version && existing.bus === bus)
-		return true;
-	if (existing)
-		existing.bus.publish = existing.originalPublish;
-
-	const originalPublish = bus.publish;
-	bus.publish = function (topic, message, ...args) {
-		const nextMessage = topic === 'rightClickPcbMenu'
-			? appendPcbContextMenu(message as PcbContextMenuState)
-			: message;
-		return originalPublish.call(this, topic, nextMessage, ...args);
-	};
-	runtime[PCB_CONTEXT_MENU_HOOK_KEY] = { bus, originalPublish, version: extensionConfig.version };
+	let hookState = runtime[PCB_CONTEXT_MENU_HOOK_KEY];
+	if (hookState?.version !== extensionConfig.version) {
+		for (const hook of hookState?.hooks ?? [])
+			hook.bus.publish = hook.originalPublish;
+		hookState = { hooks: [], version: extensionConfig.version };
+		runtime[PCB_CONTEXT_MENU_HOOK_KEY] = hookState;
+	}
+	for (const bus of buses) {
+		if (hookState.hooks.some(hook => hook.bus === bus))
+			continue;
+		const originalPublish = bus.publish;
+		bus.publish = function (topic, message, ...args) {
+			const nextMessage = topic === 'rightClickPcbMenu'
+				? appendPcbContextMenu(message as PcbContextMenuState)
+				: message;
+			return originalPublish.call(this, topic, nextMessage, ...args);
+		};
+		hookState.hooks.push({ bus, originalPublish });
+	}
 	return true;
 }
 
@@ -313,7 +336,8 @@ function stopPcbContextMenuHook(): void {
 	}
 	const hook = runtime[PCB_CONTEXT_MENU_HOOK_KEY];
 	if (hook?.version === extensionConfig.version) {
-		hook.bus.publish = hook.originalPublish;
+		for (const installedHook of hook.hooks)
+			installedHook.bus.publish = installedHook.originalPublish;
 		delete runtime[PCB_CONTEXT_MENU_HOOK_KEY];
 	}
 }
