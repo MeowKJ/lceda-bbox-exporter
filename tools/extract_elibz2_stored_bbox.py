@@ -142,13 +142,93 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description='从 .elibz2 中导出已存储的 PART.BBOX；不计算封装 BBox。',
     )
-    parser.add_argument('input', type=Path, help='输入 .elibz2 文件')
+    parser.add_argument('input', type=Path, nargs='?', help='输入 .elibz2 文件；省略时打开图形界面')
     parser.add_argument('-o', '--output', type=Path, help='输出 CSV 路径（默认与输入同目录）')
+    parser.add_argument('--gui', action='store_true', help='打开图形界面')
     return parser.parse_args()
+
+
+def run_gui() -> int:
+    """A small standard-library GUI for double-click use on Windows/macOS."""
+    try:
+        import tkinter as tk
+        from tkinter import filedialog, messagebox, ttk
+    except ImportError:
+        print('错误：当前 Python 没有 tkinter；请使用命令行方式运行。', file=sys.stderr)
+        return 1
+
+    root = tk.Tk()
+    root.title('EasyEDA .elibz2 已存储 BBox 提取器')
+    root.resizable(False, False)
+    padding = {'padx': 10, 'pady': 6}
+    input_var = tk.StringVar()
+    output_var = tk.StringVar()
+    result_var = tk.StringVar(value='选择 .elibz2 文件后导出；不会计算未保存的封装 BBox。')
+
+    def choose_input() -> None:
+        filename = filedialog.askopenfilename(
+            title='选择 .elibz2 文件',
+            filetypes=[('EasyEDA library', '*.elibz2'), ('All files', '*.*')],
+        )
+        if filename:
+            input_var.set(filename)
+            input_path = Path(filename)
+            output_var.set(str(input_path.with_name(f'{input_path.stem}-stored-bbox.csv')))
+
+    def choose_output() -> None:
+        filename = filedialog.asksaveasfilename(
+            title='保存 BBox CSV',
+            defaultextension='.csv',
+            filetypes=[('CSV', '*.csv')],
+            initialfile=Path(output_var.get() or 'stored-bbox.csv').name,
+        )
+        if filename:
+            output_var.set(filename)
+
+    def export() -> None:
+        input_path = Path(input_var.get())
+        output_path = Path(output_var.get())
+        if not input_var.get() or not input_path.is_file():
+            messagebox.showerror('无法导出', '请选择有效的 .elibz2 文件。')
+            return
+        if not output_var.get():
+            messagebox.showerror('无法导出', '请选择 CSV 保存位置。')
+            return
+        try:
+            bboxes = export_stored_part_bboxes(input_path, output_path)
+        except (OSError, ValueError, zipfile.BadZipFile) as error:
+            messagebox.showerror('无法导出', str(error))
+            return
+        details = '\n'.join(
+            f'{bbox.title}: raw [{bbox.min_x:g}, {bbox.min_y:g}, {bbox.max_x:g}, {bbox.max_y:g}] → '
+            f'{bbox.x_length_mm:g} × {bbox.y_width_mm:g} mm'
+            for bbox in bboxes
+        )
+        result_var.set(f'已导出 {len(bboxes)} 条记录：{output_path}')
+        messagebox.showinfo('导出完成', f'{details}\n\n已写入：\n{output_path}')
+
+    frame = ttk.Frame(root, padding=12)
+    frame.grid()
+    ttk.Label(frame, text='输入 .elibz2：').grid(row=0, column=0, sticky='w', **padding)
+    ttk.Entry(frame, textvariable=input_var, width=58).grid(row=0, column=1, **padding)
+    ttk.Button(frame, text='选择文件…', command=choose_input).grid(row=0, column=2, **padding)
+    ttk.Label(frame, text='输出 CSV：').grid(row=1, column=0, sticky='w', **padding)
+    ttk.Entry(frame, textvariable=output_var, width=58).grid(row=1, column=1, **padding)
+    ttk.Button(frame, text='保存位置…', command=choose_output).grid(row=1, column=2, **padding)
+    ttk.Button(frame, text='读取已存储 BBox 并导出 CSV', command=export).grid(
+        row=2, column=1, pady=(12, 6), sticky='e',
+    )
+    ttk.Label(frame, textvariable=result_var, wraplength=620).grid(
+        row=3, column=0, columnspan=3, sticky='w', **padding,
+    )
+    root.mainloop()
+    return 0
 
 
 def main() -> int:
     args = parse_args()
+    if args.gui or args.input is None:
+        return run_gui()
     output = args.output or args.input.with_name(f'{args.input.stem}-stored-bbox.csv')
     try:
         bboxes = export_stored_part_bboxes(args.input, output)

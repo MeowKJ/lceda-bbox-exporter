@@ -3,7 +3,7 @@
 	"uuid": "b11c77862a9b40c1b7200c6de52ece57",
 	"displayName": "BBox 尺寸导出器",
 	"description": "使用嘉立创 EDA 官方 API 导出选中图元或当前 PCB 全部器件的 BBox 尺寸 CSV，并生成可用于 BOM 的 X/Y/Z 列。",
-	"version": "0.8.2",
+	"version": "0.9.0",
 	"publisher": "MeowKJ",
 	"engines": {
 		"eda": "^3.0.0"

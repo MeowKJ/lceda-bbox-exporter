@@ -22,7 +22,7 @@ npm install
 npm run check
 ```
 
-扩展包生成于 `build/dist/lceda-bbox-exporter_v0.8.2.eext`。
+扩展包生成于 `build/dist/lceda-bbox-exporter_v0.9.0.eext`。
 
 在嘉立创 EDA 专业版中进入“高级 → 扩展管理器 → 导入”，选择生成的 `.eext` 文件。
 
@@ -32,6 +32,12 @@ npm run check
 
 ```bash
 python3 tools/extract_elibz2_stored_bbox.py /path/to/component.elibz2 -o /path/to/stored-bbox.csv
+```
+
+不带参数运行时会打开图形界面，可选择输入 `.elibz2` 和输出 CSV：
+
+```bash
+python3 tools/extract_elibz2_stored_bbox.py
 ```
 
 它不会从焊盘、丝印或其他封装图元手算外框。若文件没有持久化 `FOOTPRINT.BBOX`，脚本会明确保留该限制；要获得与嘉立创 EDA 灰色包围框一致的封装 BBox，请在 EDA 内使用本扩展导出。

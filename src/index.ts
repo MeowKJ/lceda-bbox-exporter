@@ -330,10 +330,45 @@ function primitiveMetadata(primitive: IPCB_Primitive): Parameters<typeof makeBBo
 	};
 }
 
-async function collectRows(primitives: Array<IPCB_Primitive>): Promise<Array<BBoxExportRow>> {
+export async function collectRows(primitives: Array<IPCB_Primitive>): Promise<Array<BBoxExportRow>> {
 	const rows: Array<BBoxExportRow> = [];
+	const zeroDegreeBBoxes = new Map<string, Awaited<ReturnType<typeof eda.pcb_Primitive.getPrimitivesBBox>>>();
 	for (const primitive of primitives) {
-		const bbox = await eda.pcb_Primitive.getPrimitivesBBox([primitive]);
+		let bbox: Awaited<ReturnType<typeof eda.pcb_Primitive.getPrimitivesBBox>>;
+		if (primitive.getState_PrimitiveType() === EPCB_PrimitiveType.COMPONENT) {
+			const component = primitive as IPCB_PrimitiveComponent;
+			const footprint = component.getState_Footprint();
+			if (!footprint)
+				throw new Error(`器件 ${component.getState_Designator() ?? component.getState_PrimitiveId()} 未关联封装，无法导出 0° BBox。`);
+			const cacheKey = `${footprint.libraryUuid}:${footprint.uuid}`;
+			bbox = zeroDegreeBBoxes.get(cacheKey);
+			if (!bbox) {
+				// 使用同一封装在远离画布的位置临时创建 0° 副本，读取官方
+				// BBox 后立刻删除。不会改动原器件的旋转、属性或网络。
+				const temporary = await eda.pcb_PrimitiveComponent.create(
+					footprint,
+					component.getState_Layer(),
+					component.getState_X() + 1_000_000,
+					component.getState_Y() + 1_000_000,
+					0,
+					true,
+				);
+				if (!temporary)
+					throw new Error(`无法创建封装 ${footprint.name ?? footprint.uuid} 的 0° 临时副本。`);
+				try {
+					bbox = await eda.pcb_Primitive.getPrimitivesBBox([temporary]);
+				}
+				finally {
+					await eda.pcb_PrimitiveComponent.delete(temporary);
+				}
+				if (!bbox)
+					throw new Error(`无法读取封装 ${footprint.name ?? footprint.uuid} 的官方 0° BBox。`);
+				zeroDegreeBBoxes.set(cacheKey, bbox);
+			}
+		}
+		else {
+			bbox = await eda.pcb_Primitive.getPrimitivesBBox([primitive]);
+		}
 		if (bbox)
 			rows.push(makeBBoxRow(primitiveMetadata(primitive), bbox));
 	}

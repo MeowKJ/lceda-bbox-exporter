@@ -154,3 +154,49 @@ test('injects and restores the PCB canvas context-menu hook', () => {
 	hookedApi.deactivate();
 	assert.equal(bus.publish, originalPublish);
 });
+
+test('normalizes randomly rotated PCB components through one temporary 0-degree official bbox', async () => {
+	const created = [];
+	const deleted = [];
+	const temporary = { temporary: true };
+	const runtimeContext = vm.createContext({
+		Blob,
+		console,
+		EPCB_PrimitiveType: { COMPONENT: 'COMPONENT' },
+		eda: {
+			pcb_Primitive: {
+				getPrimitivesBBox: async ([primitive]) => primitive.temporary
+					? { minX: 0, minY: 0, maxX: 100, maxY: 50 }
+					: { minX: 0, minY: 0, maxX: 999, maxY: 999 },
+			},
+			pcb_PrimitiveComponent: {
+				create: async (...args) => {
+					created.push(args);
+					return temporary;
+				},
+				delete: async (primitive) => {
+					deleted.push(primitive);
+					return true;
+				},
+			},
+		},
+	});
+	vm.runInContext(bundle, runtimeContext);
+	const component = designator => ({
+		getState_PrimitiveType: () => 'COMPONENT',
+		getState_Footprint: () => ({ libraryUuid: 'lib', uuid: 'footprint', name: 'C0201' }),
+		getState_Layer: () => 1,
+		getState_X: () => 10,
+		getState_Y: () => 20,
+		getState_Designator: () => designator,
+		getState_Model3D: () => undefined,
+		getState_PrimitiveId: () => designator,
+	});
+	const rows = await runtimeContext.edaEsbuildExportName.collectRows([component('C1'), component('C2')]);
+	assert.equal(created.length, 1);
+	assert.deepEqual(deleted, [temporary]);
+	assert.deepEqual(JSON.parse(JSON.stringify(rows)), [
+		{ designator: 'C1', footprintName: 'C0201', xLength: 2.54, yWidth: 1.27, zHeight: '' },
+		{ designator: 'C2', footprintName: 'C0201', xLength: 2.54, yWidth: 1.27, zHeight: '' },
+	]);
+});
