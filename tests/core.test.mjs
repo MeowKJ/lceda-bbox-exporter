@@ -121,3 +121,36 @@ test('hooks and restores the schematic message bus safely', () => {
 	assert.equal(bus.publish, originalPublish);
 	assert.equal(bus.rpcReply, originalRpcReply);
 });
+
+test('injects and restores the PCB canvas context-menu hook', () => {
+	const contextMenu = api.appendPcbContextMenu({ filter: [{ cmd: 'DELETE', name: '删除' }] });
+	assert.equal(contextMenu.filter[0].name, '导出选中 PCB 器件 BBox CSV');
+	assert.match(contextMenu.filter[0].cmd, /exportSelectedBBoxCsv/);
+	assert.deepEqual(
+		JSON.parse(JSON.stringify(api.appendPcbContextMenu(contextMenu))),
+		JSON.parse(JSON.stringify(contextMenu)),
+	);
+
+	const published = [];
+	const bus = {
+		publish(topic, message) {
+			published.push({ topic, message });
+		},
+		rpcReply() {},
+	};
+	const originalPublish = bus.publish;
+	const runtimeContext = vm.createContext({
+		Blob,
+		console,
+		PCB: { gVars: { messageBus: bus } },
+		setInterval: () => 1,
+		clearInterval: () => {},
+	});
+	vm.runInContext(bundle, runtimeContext);
+	const hookedApi = runtimeContext.edaEsbuildExportName;
+	assert.equal(hookedApi.installPcbContextMenuHook(), true);
+	bus.publish('rightClickPcbMenu', { filter: [{ cmd: 'DELETE', name: '删除' }] });
+	assert.equal(published[0].message.filter[0].name, '导出选中 PCB 器件 BBox CSV');
+	hookedApi.deactivate();
+	assert.equal(bus.publish, originalPublish);
+});

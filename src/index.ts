@@ -16,6 +16,11 @@ const SCHEMATIC_CONTEXT_MENU_COMMAND = `runRegisteredExtensionFn(${extensionConf
 const SCHEMATIC_CONTEXT_MENU_TITLE = extensionConfig.displayName;
 const SCHEMATIC_CONTEXT_MENU_EXPORT_TITLE = '导出所选原理图图元 BBox CSV';
 const SCHEMATIC_CONTEXT_MENU_RETRY_MS = 1000;
+const PCB_CONTEXT_MENU_HOOK_KEY = '__lcedaBBoxExporterPcbContextMenuHook';
+const PCB_CONTEXT_MENU_TIMER_KEY = '__lcedaBBoxExporterPcbContextMenuTimer';
+const PCB_CONTEXT_MENU_COMMAND = `runRegisteredExtensionFn(${extensionConfig.uuid}.exportSelectedBBoxCsv)`;
+const PCB_CONTEXT_MENU_EXPORT_TITLE = '导出选中 PCB 器件 BBox CSV';
+const PCB_CONTEXT_MENU_RETRY_MS = 1000;
 
 interface SchematicContextMenuState {
 	cmdKey?: string;
@@ -63,6 +68,39 @@ interface SchematicRuntime {
 	};
 	[SCHEMATIC_CONTEXT_MENU_HOOK_KEY]?: SchematicContextMenuHookState;
 	[SCHEMATIC_CONTEXT_MENU_TIMER_KEY]?: SchematicContextMenuTimerState;
+}
+
+interface PcbContextMenuItem {
+	cmd?: string;
+	name?: string;
+	option?: Record<string, unknown>;
+	tips?: string;
+	[key: string]: unknown;
+}
+
+interface PcbContextMenuState {
+	filter?: Array<PcbContextMenuItem>;
+	[key: string]: unknown;
+}
+
+interface PcbContextMenuHookState {
+	originalPublish: InternalPublish;
+	version: string;
+}
+
+interface PcbContextMenuTimerState {
+	timer: ReturnType<typeof setInterval>;
+	version: string;
+}
+
+interface PcbRuntime {
+	PCB?: {
+		gVars?: {
+			messageBus?: InternalMessageBus;
+		};
+	};
+	[PCB_CONTEXT_MENU_HOOK_KEY]?: PcbContextMenuHookState;
+	[PCB_CONTEXT_MENU_TIMER_KEY]?: PcbContextMenuTimerState;
 }
 
 async function registerRightClickMenus(): Promise<void> {
@@ -195,6 +233,79 @@ function stopSchematicContextMenuHook(): void {
 	}
 }
 
+/**
+ * PCB 画布右键菜单由 PCB.gVars.messageBus 的 rightClickPcbMenu 事件生成。
+ * 这里插入一个直接项目，命令仍调用公开的 PCB BBox 导出函数。
+ */
+export function appendPcbContextMenu(menu: PcbContextMenuState | undefined): PcbContextMenuState | undefined {
+	if (!menu || !Array.isArray(menu.filter))
+		return menu;
+	if (menu.filter.some(item => item.cmd === PCB_CONTEXT_MENU_COMMAND))
+		return menu;
+	return {
+		...menu,
+		filter: [{
+			cmd: PCB_CONTEXT_MENU_COMMAND,
+			name: PCB_CONTEXT_MENU_EXPORT_TITLE,
+			option: { disabledI18n: true },
+			tips: '',
+		}, ...menu.filter],
+	};
+}
+
+/** 安装 PCB 画布右键菜单 Hook；内部接口不可用时保留现有稳定入口。 */
+export function installPcbContextMenuHook(): boolean {
+	const runtime = globalThis as unknown as PcbRuntime;
+	const bus = runtime.PCB?.gVars?.messageBus;
+	if (!bus || typeof bus.publish !== 'function')
+		return false;
+
+	const existing = runtime[PCB_CONTEXT_MENU_HOOK_KEY];
+	if (existing?.version === extensionConfig.version)
+		return true;
+	if (existing)
+		bus.publish = existing.originalPublish;
+
+	const originalPublish = bus.publish;
+	bus.publish = function (topic, message, ...args) {
+		const nextMessage = topic === 'rightClickPcbMenu'
+			? appendPcbContextMenu(message as PcbContextMenuState)
+			: message;
+		return originalPublish.call(this, topic, nextMessage, ...args);
+	};
+	runtime[PCB_CONTEXT_MENU_HOOK_KEY] = { originalPublish, version: extensionConfig.version };
+	return true;
+}
+
+function startPcbContextMenuHook(): void {
+	installPcbContextMenuHook();
+	const runtime = globalThis as unknown as PcbRuntime;
+	const existingTimer = runtime[PCB_CONTEXT_MENU_TIMER_KEY];
+	if (existingTimer?.version === extensionConfig.version)
+		return;
+	if (existingTimer)
+		clearInterval(existingTimer.timer);
+	runtime[PCB_CONTEXT_MENU_TIMER_KEY] = {
+		timer: setInterval(installPcbContextMenuHook, PCB_CONTEXT_MENU_RETRY_MS),
+		version: extensionConfig.version,
+	};
+}
+
+function stopPcbContextMenuHook(): void {
+	const runtime = globalThis as unknown as PcbRuntime;
+	const timer = runtime[PCB_CONTEXT_MENU_TIMER_KEY];
+	if (timer?.version === extensionConfig.version) {
+		clearInterval(timer.timer);
+		delete runtime[PCB_CONTEXT_MENU_TIMER_KEY];
+	}
+	const hook = runtime[PCB_CONTEXT_MENU_HOOK_KEY];
+	const bus = runtime.PCB?.gVars?.messageBus;
+	if (hook?.version === extensionConfig.version && bus) {
+		bus.publish = hook.originalPublish;
+		delete runtime[PCB_CONTEXT_MENU_HOOK_KEY];
+	}
+}
+
 function primitiveMetadata(primitive: IPCB_Primitive): Parameters<typeof makeBBoxRow>[0] {
 	if (primitive.getState_PrimitiveType() !== EPCB_PrimitiveType.COMPONENT)
 		return {};
@@ -286,10 +397,12 @@ export function activate(status?: 'onStartupFinished', arg?: string): void {
 	// 右键菜单 API 属于 beta，失败时保留顶部菜单入口，不影响导出功能。
 	void registerRightClickMenus().catch(error => console.warn(errorMessage(error)));
 	startSchematicContextMenuHook();
+	startPcbContextMenuHook();
 }
 
 export function deactivate(): void {
 	stopSchematicContextMenuHook();
+	stopPcbContextMenuHook();
 }
 
 export async function exportSelectedBBoxCsv(): Promise<void> {
