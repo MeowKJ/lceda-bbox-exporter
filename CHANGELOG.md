@@ -5,6 +5,7 @@
 - 接入与去耦喵相同的原理图画布右键菜单 Hook：右键单个已选器件时显示「BBox 尺寸导出器 → 导出所选原理图图元 BBox CSV」。
 - Hook 仅负责加入入口；实际 BBox 仍通过公开的 `eda.sch_Primitive.getPrimitivesBBox()` 读取。
 - 增加特征检测、重复安装防护、定时重试与 `deactivate()` 恢复逻辑；内部接口不可用时保留顶部与列表右键入口。
+- 新增零依赖 Python 脚本，可读取 `.elibz2` 内显式保存的 `PART.BBOX`；没有保存的封装 BBox 一律不计算。
 
 ## 0.6.0
 

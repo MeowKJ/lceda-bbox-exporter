@@ -8,6 +8,7 @@
 /src/
 /tests/
 /test-evidence/
+/tools/
 /tmp/
 /.editorconfig
 /.gitattributes

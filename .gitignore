@@ -1,5 +1,6 @@
 node_modules/
 dist/
+tools/__pycache__/
 build/dist/
 .npm-cache/
 .eslintcache

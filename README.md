@@ -22,9 +22,21 @@ npm install
 npm run check
 ```
 
-扩展包生成于 `build/dist/lceda-bbox-exporter_v0.6.0.eext`。
+扩展包生成于 `build/dist/lceda-bbox-exporter_v0.7.0.eext`。
 
 在嘉立创 EDA 专业版中进入“高级 → 扩展管理器 → 导入”，选择生成的 `.eext` 文件。
+
+## 离线读取 `.elibz2` 中已存储的 BBox
+
+`tools/extract_elibz2_stored_bbox.py` 是一个零依赖 Python 3 脚本，用于读取 `.elibz2` 文件内**已经保存**的 `PART.BBOX`，并导出同样的五列 CSV：
+
+```bash
+python3 tools/extract_elibz2_stored_bbox.py /path/to/component.elibz2 -o /path/to/stored-bbox.csv
+```
+
+它不会从焊盘、丝印或其他封装图元手算外框。若文件没有持久化 `FOOTPRINT.BBOX`，脚本会明确保留该限制；要获得与嘉立创 EDA 灰色包围框一致的封装 BBox，请在 EDA 内使用本扩展导出。
+
+注意：存储在库文件里的 `PART.BBOX` 也不保证等于一个已放置器件的 EDA 运行时官方 BBox。当前样例中，脚本读取到 `53.34 × 165.1 mm`，而 EDA 对已放置的 U1 通过官方 API 导出为 `53.594 × 165.354 mm`；两者应按用途分别使用，不可互相替代。
 
 ## 使用
 
