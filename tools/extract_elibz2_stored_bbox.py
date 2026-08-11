@@ -160,6 +160,7 @@ def run_gui() -> int:
     root = tk.Tk()
     root.title('EasyEDA .elibz2 已存储 BBox 提取器')
     root.resizable(False, False)
+    root.geometry('760x220')
     padding = {'padx': 10, 'pady': 6}
     input_var = tk.StringVar()
     output_var = tk.StringVar()
@@ -209,17 +210,23 @@ def run_gui() -> int:
 
     frame = ttk.Frame(root, padding=12)
     frame.grid()
-    ttk.Label(frame, text='输入 .elibz2：').grid(row=0, column=0, sticky='w', **padding)
-    ttk.Entry(frame, textvariable=input_var, width=58).grid(row=0, column=1, **padding)
-    ttk.Button(frame, text='选择文件…', command=choose_input).grid(row=0, column=2, **padding)
-    ttk.Label(frame, text='输出 CSV：').grid(row=1, column=0, sticky='w', **padding)
-    ttk.Entry(frame, textvariable=output_var, width=58).grid(row=1, column=1, **padding)
-    ttk.Button(frame, text='保存位置…', command=choose_output).grid(row=1, column=2, **padding)
+    ttk.Label(frame, text='从嘉立创 .elibz2 读取已存储的 PART.BBOX（不手算封装外框）').grid(
+        row=0, column=0, columnspan=3, sticky='w', **padding,
+    )
+    ttk.Button(frame, text='1. 选择 .elibz2 文件…', command=choose_input).grid(
+        row=1, column=0, columnspan=3, pady=(4, 8), sticky='ew',
+    )
+    ttk.Label(frame, text='输入文件：').grid(row=2, column=0, sticky='w', **padding)
+    ttk.Entry(frame, textvariable=input_var, width=58).grid(row=2, column=1, **padding)
+    ttk.Button(frame, text='重新选择…', command=choose_input).grid(row=2, column=2, **padding)
+    ttk.Label(frame, text='输出 CSV：').grid(row=3, column=0, sticky='w', **padding)
+    ttk.Entry(frame, textvariable=output_var, width=58).grid(row=3, column=1, **padding)
+    ttk.Button(frame, text='保存位置…', command=choose_output).grid(row=3, column=2, **padding)
     ttk.Button(frame, text='读取已存储 BBox 并导出 CSV', command=export).grid(
-        row=2, column=1, pady=(12, 6), sticky='e',
+        row=4, column=1, pady=(12, 6), sticky='e',
     )
     ttk.Label(frame, textvariable=result_var, wraplength=620).grid(
-        row=3, column=0, columnspan=3, sticky='w', **padding,
+        row=5, column=0, columnspan=3, sticky='w', **padding,
     )
     root.mainloop()
     return 0
