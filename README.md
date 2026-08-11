@@ -1,15 +1,17 @@
 # BBox 尺寸导出器
 
-嘉立创 EDA 专业版 V3 扩展，用官方 `getPrimitivesBBox` API 导出 PCB/封装图元的灰色包围框（BBox）实际尺寸。
+嘉立创 EDA 专业版 V3 扩展，用官方 `getPrimitivesBBox` API 导出原理图、PCB 与封装图元的灰色包围框（BBox）尺寸 CSV。
 
 ## 功能
 
-- 分别导出当前选中图元的 CSV 或 JSON BBox；
-- 分别导出当前文档中全部器件的 CSV 或 JSON BBox；
-- 同时生成 UTF-8 CSV 与 JSON；
+- 导出当前选中图元的 CSV BBox；
+- 导出当前文档中全部器件的 CSV BBox；
+- 原理图中支持导出选中图元的官方 BBox；
 - 将官方 API 返回的 mil 坐标转换为毫米，保留四位小数；
-- 输出坐标、宽高、图元类型以及可获得的器件/封装/3D 模型信息；
-- CSV 包含与截图 BOM 对应的 `X-Length of Bottom Edge on Board (Spacing Line)`、`Y-Width`、`Z-Height`。
+- 输出与参考 PDF 标注对应的精简 BOM 列：`Designator`、`Footprint`、`X-Length of Bottom Edge on Board (Spacing Line)`、`Y-Width`、`Z-Height`；
+- 不生成 JSON，也不导出内部 ID、旋转角、原始 Min/Max 坐标等冗余条目。
+- 支持在底部器件列表、原理图底部符号列表中右键导出。
+- 在封装编辑器中支持“导出当前封装库官方 BBox CSV”：将当前封装全部官方图元一次性传给 `getPrimitivesBBox()`，不自行计算边界。
 
 ## 构建
 
@@ -20,28 +22,31 @@ npm install
 npm run check
 ```
 
-扩展包生成于 `build/dist/lceda-bbox-exporter_v0.1.0.eext`。
+扩展包生成于 `build/dist/lceda-bbox-exporter_v0.6.0.eext`。
 
 在嘉立创 EDA 专业版中进入“高级 → 扩展管理器 → 导入”，选择生成的 `.eext` 文件。
 
 ## 使用
 
-1. 打开 PCB 或封装画布；原理图符号的 BBox 不是封装外形尺寸，不能用于本导出；
+1. 打开 PCB、封装或原理图画布；
 2. 选中一个或多个图元；
-3. 进入“BBox 尺寸导出器”，选择 CSV 或 JSON 导出命令；
-4. 分别保存 CSV 和 JSON 文件。
+3. 进入“高级(A) → BBox 尺寸导出器”，选择选中图元或全部器件的 CSV 导出命令；
+4. 保存 CSV 文件。
 
-“导出全部器件尺寸”会忽略普通线条、焊盘等非器件图元，只导出器件级 BBox。CSV 和 JSON 各自使用一个独立的系统保存窗口：这是为了兼容嘉立创 EDA 桌面端，避免连续保存窗口导致第二个导出丢失。
+要从封装库导出：先把 `.elibz2` 导入嘉立创 EDA 并打开目标封装，选择“高级(A) → BBox 尺寸导出器 → 导出当前封装库官方 BBox CSV”。导出取该封装编辑器返回的官方 BBox，不取 PCB 已放置实例，也不手动计算四条边。
+
+“导出全部器件尺寸”会忽略普通线条、焊盘等非器件图元，只导出器件级 BBox。
+
+嘉立创 EDA 目前仅对底部“器件列表、符号列表、封装列表”等右键菜单开放扩展 API；PCB 与原理图画布本身的右键菜单不能由扩展添加项目。
 
 ## 数据约定
 
-- 坐标系：笛卡尔坐标系，右上为正；
 - 单位：`mm`；
 - 换算：`1 mil = 0.0254 mm`；
-- `width = maxX - minX`；
-- `height = maxY - minY`。
-- `X-Length... = width`、`Y-Width = height`；它们严格来自编辑器选中时显示的二维灰色 BBox。
-- 二维 BBox 不含 Z 轴。仅当关联 3D 模型名以常见 `L…-W…-H…` 形式明确给出 H 值时，`Z-Height` 才会填写；否则留空，并标记 `Z-Height Source=unavailable`，不会伪造高度。
+- 原理图官方 BBox 单位为 `0.01 inch`，即 `0.254 mm`；
+- `X-Length... = maxX - minX`；
+- `Y-Width = maxY - minY`；它们严格来自编辑器选中时显示的二维灰色 BBox。
+- 二维 BBox 不含 Z 轴。仅当关联 3D 模型名以常见 `L…-W…-H…` 形式明确给出 H 值时，`Z-Height` 才会填写；否则留空，不会伪造高度。
 
 ## 开发依据
 

@@ -8,37 +8,40 @@ const context = vm.createContext({ Blob, console });
 vm.runInContext(bundle, context);
 const api = context.edaEsbuildExportName;
 
-test('converts mil bbox to millimetres and derives size', () => {
-	const row = api.makeBBoxRow({ primitiveId: 'U1', primitiveType: 'COMPONENT' }, {
+test('converts mil bbox to the compact BOM dimension row', () => {
+	const row = api.makeBBoxRow({ designator: 'U1', footprintName: 'QFP-128' }, {
 		minX: -100,
 		minY: -50,
 		maxX: 100,
 		maxY: 50,
 	});
 	assert.deepEqual(JSON.parse(JSON.stringify(row)), {
-		primitiveId: 'U1',
-		primitiveType: 'COMPONENT',
-		designator: '',
-		componentName: '',
-		footprintName: '',
-		model3DName: '',
-		rotation: '',
-		minX: -2.54,
-		minY: -1.27,
-		maxX: 2.54,
-		maxY: 1.27,
-		width: 5.08,
-		height: 2.54,
+		designator: 'U1',
+		footprintName: 'QFP-128',
 		xLength: 5.08,
 		yWidth: 2.54,
 		zHeight: '',
-		zHeightSource: 'unavailable',
-		unit: 'mm',
 	});
 });
 
-test('CSV includes BOM and escapes names', () => {
-	const row = api.makeBBoxRow({ primitiveId: '1', primitiveType: 'X', componentName: 'A,"B"' }, {
+test('converts official schematic 0.01 inch bbox units to mm', () => {
+	const row = api.makeBBoxRow({ designator: 'U1' }, {
+		minX: 0,
+		minY: 0,
+		maxX: 10,
+		maxY: 20,
+	}, api.SCHEMATIC_BBOX_UNIT_TO_MM);
+	assert.deepEqual(JSON.parse(JSON.stringify(row)), {
+		designator: 'U1',
+		footprintName: '',
+		xLength: 2.54,
+		yWidth: 5.08,
+		zHeight: '',
+	});
+});
+
+test('CSV matches the compact Designator/Footprint/X/Y/Z format', () => {
+	const row = api.makeBBoxRow({ designator: 'U1', footprintName: 'A,"B"' }, {
 		minX: 0,
 		minY: 0,
 		maxX: 1000,
@@ -49,7 +52,8 @@ test('CSV includes BOM and escapes names', () => {
 	assert.match(csv, /"A,""B"""/);
 	assert.match(csv, /25\.4/);
 	assert.match(csv, /X-Length of Bottom Edge on Board \(Spacing Line\)/);
-	assert.match(csv, /Y-Width,Z-Height/);
+	assert.match(csv, /Designator,Footprint,X-Length of Bottom Edge on Board \(Spacing Line\),Y-Width,Z-Height/);
+	assert.doesNotMatch(csv, /Primitive ID|BBox Min|3D Model|Rotation|JSON/);
 });
 
 test('derives Z height only from an explicit 3D model H parameter', () => {
@@ -58,16 +62,10 @@ test('derives Z height only from an explicit 3D model H parameter', () => {
 	assert.equal(api.modelNameToZHeightMm('unrelated-model'), '');
 });
 
-test('JSON records coordinate system and unit', () => {
-	const parsed = JSON.parse(api.rowsToJson([]));
-	assert.equal(parsed.schemaVersion, 1);
-	assert.equal(parsed.coordinateSystem, 'cartesian');
-	assert.equal(parsed.unit, 'mm');
-});
-
-test('exposes one save-dialog command for each export format', () => {
+test('exposes CSV-only export commands', () => {
 	assert.equal(typeof api.exportSelectedBBoxCsv, 'function');
-	assert.equal(typeof api.exportSelectedBBoxJson, 'function');
+	assert.equal(typeof api.exportSelectedSchematicBBoxCsv, 'function');
 	assert.equal(typeof api.exportAllComponentBBoxCsv, 'function');
-	assert.equal(typeof api.exportAllComponentBBoxJson, 'function');
+	assert.equal(typeof api.exportCurrentFootprintLibraryBBoxCsv, 'function');
+	assert.equal(api.rowsToJson, undefined);
 });

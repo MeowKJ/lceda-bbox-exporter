@@ -8,6 +8,7 @@
 /src/
 /tests/
 /test-evidence/
+/tmp/
 /.editorconfig
 /.gitattributes
 /.gitignore

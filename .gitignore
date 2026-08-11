@@ -4,3 +4,4 @@ build/dist/
 .npm-cache/
 .eslintcache
 debug.log
+tmp/
