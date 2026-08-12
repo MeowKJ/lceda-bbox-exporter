@@ -77,9 +77,50 @@ export const CSV_HEADERS: Record<keyof BBoxExportRow, string> = {
 	zHeight: 'Z-Height',
 };
 
-function escapeCsv(value: unknown): string {
+export function escapeCsv(value: unknown): string {
 	const text = String(value ?? '');
 	return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+}
+
+export interface TruthBBoxRow {
+	bbox: RawBBox;
+	edaVersion: string;
+	extensionVersion: string;
+	footprintName: string;
+	footprintUuid: string;
+}
+
+/** Development-only truth data used to compare the offline V3 parser. */
+export function truthRowsToCsv(rows: Array<TruthBBoxRow>): string {
+	const headers = [
+		'Footprint',
+		'Footprint UUID',
+		'Min X (mil)',
+		'Min Y (mil)',
+		'Max X (mil)',
+		'Max Y (mil)',
+		'X-Length (mm)',
+		'Y-Width (mm)',
+		'EDA Version',
+		'Extension Version',
+	];
+	const lines = [headers.join(',')];
+	for (const row of rows) {
+		const dimensions = makeBBoxRow({ footprintName: row.footprintName }, row.bbox);
+		lines.push([
+			row.footprintName,
+			row.footprintUuid,
+			row.bbox.minX,
+			row.bbox.minY,
+			row.bbox.maxX,
+			row.bbox.maxY,
+			dimensions.xLength,
+			dimensions.yWidth,
+			row.edaVersion,
+			row.extensionVersion,
+		].map(escapeCsv).join(','));
+	}
+	return `\uFEFF${lines.join('\r\n')}\r\n`;
 }
 
 export function rowsToCsv(rows: Array<BBoxExportRow>): string {

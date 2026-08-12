@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.0
+
+- 新增纯 Python 3.10+ 独立 `.elibz2` BBox 批量导出工具，运行时不依赖嘉立创 EDA。
+- 支持多文件、文件夹递归、Tkinter UI、CLI、五列 UTF-8 BOM 汇总 CSV 和逐封装审计 CSV。
+- 按 V3 日志最终一致性规则合并记录，支持焊盘、孔、直线、圆弧、贝塞尔、路径、描边、图片及明确几何文字；未知格式或图元失败关闭，不输出估算值。
+- Python 29 项单元/集成测试加入 `npm run check` 与 GitHub Actions。
+- 插件新增开发期官方真值 CSV，含原始 min/max mil、X/Y mm、EDA 版本及扩展版本。
+
 ## 0.9.0
 
 - PCB 器件导出统一按关联封装的官方 0° BBox 输出，忽略板上任意旋转；原器件不被改动。

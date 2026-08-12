@@ -1,8 +1,8 @@
 import type { BBoxExportRow } from './core';
 import * as extensionConfig from '../extension.json';
-import { makeBBoxRow, rowsToCsv, SCHEMATIC_BBOX_UNIT_TO_MM } from './core';
+import { makeBBoxRow, rowsToCsv, SCHEMATIC_BBOX_UNIT_TO_MM, truthRowsToCsv } from './core';
 
-export { makeBBoxRow, milToMm, modelNameToZHeightMm, rowsToCsv, SCHEMATIC_BBOX_UNIT_TO_MM } from './core';
+export { makeBBoxRow, milToMm, modelNameToZHeightMm, rowsToCsv, SCHEMATIC_BBOX_UNIT_TO_MM, truthRowsToCsv } from './core';
 
 function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
@@ -525,6 +525,37 @@ export async function exportCurrentFootprintLibraryBBoxCsv(): Promise<void> {
 		await saveRows([
 			makeBBoxRow({ footprintName: footprint?.name ?? documentInfo.uuid }, bbox),
 		], 'footprint-bbox');
+	});
+}
+
+/**
+ * 开发期官方真值导出：保留原始 mil 四边与 EDA/API 版本，供离线解析器
+ * 逐项对照。它不改变最终用户五列 CSV，也不是离线工具的运行时依赖。
+ */
+export async function exportCurrentFootprintTruthCsv(): Promise<void> {
+	await runExport(async () => {
+		const documentInfo = await eda.dmt_SelectControl.getCurrentDocumentInfo();
+		if (!documentInfo || documentInfo.documentType !== EDMT_EditorDocumentType.FOOTPRINT)
+			throw new Error('请先在封装编辑器中打开目标封装，再导出官方真值 CSV。');
+		const bbox = await eda.pcb_Primitive.getPrimitivesBBox(await getCurrentFootprintPrimitives());
+		if (!bbox)
+			throw new Error('当前封装没有可读取的官方 BBox。');
+		const libraryUuid = documentInfo.parentLibraryUuid
+			?? await eda.lib_LibrariesList.getProjectLibraryUuid();
+		const footprint = libraryUuid
+			? await eda.lib_Footprint.get(documentInfo.uuid, libraryUuid)
+			: undefined;
+		await eda.sys_FileSystem.saveFile(
+			new Blob([truthRowsToCsv([{
+				bbox,
+				footprintName: footprint?.name ?? documentInfo.uuid,
+				footprintUuid: documentInfo.uuid,
+				edaVersion: eda.sys_Environment.getEditorCurrentVersion(),
+				extensionVersion: extensionConfig.version,
+			}])], { type: 'text/csv;charset=utf-8' }),
+			'footprint-bbox-truth.csv',
+		);
+		eda.sys_Message.showToastMessage('已导出当前封装官方真值 CSV。', ESYS_ToastMessageType.SUCCESS);
 	});
 }
 

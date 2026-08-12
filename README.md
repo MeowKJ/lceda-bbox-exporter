@@ -1,77 +1,110 @@
 # BBox 尺寸导出器
 
-嘉立创 EDA 专业版 V3 扩展，用官方 `getPrimitivesBBox` API 导出原理图、PCB 与封装图元的灰色包围框（BBox）尺寸 CSV。
+本仓库包含两个用途明确分开的工具：
 
-## 功能
+1. `tools/elibz2_bbox_tool.py`：最终交付的独立 `.elibz2` 批量 BBox 导出工具；
+2. 嘉立创 EDA 专业版扩展：日常从画布导出官方 BBox，并在开发期生成真值 CSV。
 
-- 导出当前选中图元的 CSV BBox；
-- 导出当前文档中全部器件的 CSV BBox；
-- 原理图中支持导出选中图元的官方 BBox；
-- 将官方 API 返回的 mil 坐标转换为毫米，保留四位小数；
-- 输出与参考 PDF 标注对应的精简 BOM 列：`Designator`、`Footprint`、`X-Length of Bottom Edge on Board (Spacing Line)`、`Y-Width`、`Z-Height`；
-- 不生成 JSON，也不导出内部 ID、旋转角、原始 Min/Max 坐标等冗余条目。
-- 支持在底部器件列表、原理图底部符号列表中右键导出。
-- 在封装编辑器中支持“导出当前封装库官方 BBox CSV”：将当前封装全部官方图元一次性传给 `getPrimitivesBBox()`，不自行计算边界。
+独立工具运行时不安装、不启动、不登录嘉立创 EDA，也不依赖扩展。
 
-## 构建
+## 独立 `.elibz2` 批量工具
 
-需要 Node.js 20.17 或更高版本。
+### 环境
+
+- Python 3.10 或更高版本；
+- 不需要安装 pip 包；
+- Windows、macOS 和 Linux 均可运行；
+- 图形界面使用 Python 自带 Tkinter。部分 Linux 发行版需要另装 `python3-tk`，没有 Tk 时 CLI 仍可使用。
+
+### 图形界面
+
+直接运行且不带参数：
+
+```bash
+python3 tools/elibz2_bbox_tool.py
+```
+
+界面支持添加多个文件、递归添加文件夹、删除、清空和自动去重。处理在线程中执行，可取消；结果列表会显示每个封装的状态、尺寸和错误原因。
+
+### 命令行
+
+```bash
+python3 tools/elibz2_bbox_tool.py <文件或文件夹...> -o result.csv
+```
+
+文件夹会递归扫描 `.elibz2`。已有主 CSV 或审计 CSV 时默认拒绝覆盖，明确使用 `--force` 才覆盖：
+
+```bash
+python3 tools/elibz2_bbox_tool.py library.elibz2 ./libraries -o result.csv --force
+```
+
+退出码：
+
+- `0`：全部封装成功；
+- `1`：部分成功、部分失败；
+- `2`：全部失败、无输入或发生致命错误。
+
+### 输出
+
+主文件是 UTF-8 BOM CSV，固定五列：
+
+- `Designator`：独立封装库没有位号，统一留空；
+- `Footprint`；
+- `X-Length of Bottom Edge on Board (Spacing Line)`；
+- `Y-Width`；
+- `Z-Height`。
+
+同时生成 `<主文件名>-audit.csv`，记录输入路径、封装 UUID、格式版本、参与计算的图元类型、原始 mil 四边、尺寸、状态和失败原因。不生成 JSON。
+
+`Z-Height` 只在关联设备的 `3D Model Title` 明确包含 `H3.4` 一类参数时填写。缺少高度或存在多个冲突高度时留空。
+
+### 计算口径与失败策略
+
+- 真值目标是封装作为 PCB 器件以 0° 放置时的灰色选择框；
+- V3 PCB/FOOTPRINT 坐标按 `1 mil = 0.0254 mm`；
+- 读取 ZIP 内全部 `.elibu`，按 `DOCHEAD`/UUID 聚合 FOOTPRINT 文档；
+- 同 `type + id` 保留最高 `ticket`，同票冲突按 client 稳定归并，并处理空数据删除与 `DELETE_DOC`；
+- 支持焊盘/特殊焊盘/孔、直线、圆弧、旋转矩形、多边形、填充路径、三阶贝塞尔、描边、圆以及有明确路径或宽高的图片和文字；
+- `relativeAngle` 只旋转孔，不旋转焊盘本体；封装整体按 0° 合并；
+- 未知格式版本、未知图元或缺少必要几何数据时，该封装在审计表中标记失败，主表不输出估算行，其他封装继续处理；
+- 不读取 `PART.BBOX` 作为封装尺寸。
+
+当前声明支持嘉立创 EDA 专业版 3.2 系列导出的 V3 键值 `.elibz2`。其他格式版本必须先增加官方真值回归，不能按近似模式放行。
+
+## 嘉立创 EDA 官方真值扩展
+
+扩展使用官方 `getPrimitivesBBox()` API，可在 PCB、封装和原理图环境导出五列 CSV。PCB 器件统一按关联封装的官方 0° BBox 输出，不受板上随机旋转影响。
+
+封装编辑器中额外提供“开发：导出当前封装官方真值 CSV”，包含：
+
+- 封装名称和 UUID；
+- 原始 `minX/minY/maxX/maxY`（mil）；
+- X/Y（mm）；
+- EDA 版本和扩展版本。
+
+该命令只用于开发期比较离线解析结果，不是离线工具依赖，也不改变用户五列导出格式。
+
+构建需要 Node.js 20.17 或更高版本：
 
 ```bash
 npm install
 npm run check
 ```
 
-扩展包生成于 `build/dist/lceda-bbox-exporter_v0.9.1.eext`。
+扩展包生成于 `build/dist/lceda-bbox-exporter_v1.0.0.eext`。在嘉立创 EDA 专业版中进入“高级 → 扩展管理器 → 导入”安装。
 
-在嘉立创 EDA 专业版中进入“高级 → 扩展管理器 → 导入”，选择生成的 `.eext` 文件。
+## 旧 `PART.BBOX` 提取脚本
 
-## 离线读取 `.elibz2` 中已存储的 BBox
+`tools/extract_elibz2_stored_bbox.py` 保留用于兼容旧工作流。它只提取库中已存储的原理图符号 `PART.BBOX`，不是封装几何计算器。
 
-`tools/extract_elibz2_stored_bbox.py` 是一个零依赖 Python 3 脚本，用于读取 `.elibz2` 文件内**已经保存**的 `PART.BBOX`，并导出同样的五列 CSV：
+例如 PQFP 样例的 `PART.BBOX` 是 `53.34 × 165.1 mm`，而 PCB 0° 封装官方真值是 `24.5361 × 19.0361 mm`。两者对象和单位口径不同，不能互相替代。需要封装尺寸时应使用新的 `elibz2_bbox_tool.py`。
 
-```bash
-python3 tools/extract_elibz2_stored_bbox.py /path/to/component.elibz2 -o /path/to/stored-bbox.csv
-```
+## 验证与开发依据
 
-不带参数运行时会打开图形界面，可选择输入 `.elibz2` 和输出 CSV：
-
-```bash
-python3 tools/extract_elibz2_stored_bbox.py
-```
-
-它不会从焊盘、丝印或其他封装图元手算外框。若文件没有持久化 `FOOTPRINT.BBOX`，脚本会明确保留该限制；要获得与嘉立创 EDA 灰色包围框一致的封装 BBox，请在 EDA 内使用本扩展导出。
-
-注意：存储在库文件里的 `PART.BBOX` 也不保证等于一个已放置器件的 EDA 运行时官方 BBox。当前样例中，脚本读取到 `53.34 × 165.1 mm`，而 EDA 对已放置的 U1 通过官方 API 导出为 `53.594 × 165.354 mm`；两者应按用途分别使用，不可互相替代。
-
-## 使用
-
-1. 打开 PCB、封装或原理图画布；
-2. 选中一个或多个图元；
-3. 进入“高级(A) → BBox 尺寸导出器”，选择选中图元或全部器件的 CSV 导出命令；
-4. 保存 CSV 文件。
-
-要从封装库导出：先把 `.elibz2` 导入嘉立创 EDA 并打开目标封装，选择“高级(A) → BBox 尺寸导出器 → 导出当前封装库官方 BBox CSV”。导出取该封装编辑器返回的官方 BBox，不取 PCB 已放置实例，也不手动计算四条边。
-
-“导出全部器件尺寸”会忽略普通线条、焊盘等非器件图元，只导出器件级 BBox。
-
-嘉立创 EDA 目前仅对底部“器件列表、符号列表、封装列表”等右键菜单开放扩展 API；PCB 与原理图画布本身的右键菜单不能由扩展添加项目。
-
-## 数据约定
-
-- 单位：`mm`；
-- 换算：`1 mil = 0.0254 mm`；
-- 原理图官方 BBox 单位为 `0.01 inch`，即 `0.254 mm`；
-- `X-Length... = maxX - minX`；
-- `Y-Width = maxY - minY`；它们严格来自编辑器选中时显示的二维灰色 BBox。
-- 二维 BBox 不含 Z 轴。仅当关联 3D 模型名以常见 `L…-W…-H…` 形式明确给出 H 值时，`Z-Height` 才会填写；否则留空，不会伪造高度。
-
-## 开发依据
-
+- 嘉立创公开的 EasyEDA Pro V3 文件格式；
 - 嘉立创 EDA 专业版扩展 API；
-- `eda.pcb_SelectControl.getAllSelectedPrimitives()`；
-- `eda.pcb_Primitive.getPrimitivesBBox()`；
-- `eda.pcb_PrimitiveComponent.getAll()`；
-- `eda.sys_FileSystem.saveFile()`。
+- `eda.pcb_Primitive.getPrimitivesBBox()` 黑盒真值对照；
+- PQFP-128 已知 PCB 0° 基线：`24.5361 × 19.0361 mm`；
+- `npm run check` 同时执行 ESLint、TypeScript、Node 测试、Python 测试、构建和扩展包校验。
 
-项目结构和构建工具基于嘉立创 EDA 扩展 SDK，业务代码与扩展 UUID 独立。
+项目不复制或分发嘉立创客户端代码与资源。

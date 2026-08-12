@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Export only BBox values explicitly stored in an EasyEDA .elibz2 archive.
+"""Legacy extractor for symbol PART.BBOX values stored in .elibz2 archives.
 
 This tool intentionally does *not* derive a footprint outline from pads, silk,
 or other primitives.  A footprint whose archive does not contain a BBOX field
 must be opened in EasyEDA and exported by the extension, which calls the
-official runtime getPrimitivesBBox() API.
+official runtime getPrimitivesBBox() API.  For footprint geometry use the new
+``elibz2_bbox_tool.py`` instead.
 """
 
 from __future__ import annotations

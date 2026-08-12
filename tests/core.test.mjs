@@ -67,7 +67,20 @@ test('exposes CSV-only export commands', () => {
 	assert.equal(typeof api.exportSelectedSchematicBBoxCsv, 'function');
 	assert.equal(typeof api.exportAllComponentBBoxCsv, 'function');
 	assert.equal(typeof api.exportCurrentFootprintLibraryBBoxCsv, 'function');
+	assert.equal(typeof api.exportCurrentFootprintTruthCsv, 'function');
 	assert.equal(api.rowsToJson, undefined);
+});
+
+test('truth CSV keeps raw mil bounds and version evidence', () => {
+	const csv = api.truthRowsToCsv([{
+		bbox: { minX: -10, minY: -20, maxX: 30, maxY: 40 },
+		footprintName: 'A,"B"',
+		footprintUuid: 'fp-1',
+		edaVersion: '3.2.175',
+		extensionVersion: '1.0.0',
+	}]);
+	assert.match(csv, /Min X \(mil\).*EDA Version,Extension Version/);
+	assert.match(csv, /"A,""B""",fp-1,-10,-20,30,40,1\.016,1\.524,3\.2\.175,1\.0\.0/);
 });
 
 test('injects the schematic canvas context menu only for selected components', () => {
