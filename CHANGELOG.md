@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.1
+
+- 新增开发期 `.elibz2` 外部库挂载入口，使用公开 `registerExtendLibrary()` 与 `openLibraryDocument()` 绕过客户端原生导入器不接受 `.elibz2` 的限制。
+- 挂载时保留归档中的真实封装 UUID，便于离线结果与官方 BBox 一一对照。
+- 新增固定 PCB 坐标的 0° 外部封装真值导出，避免封装编辑器原点与 PCB 平移后四位小数边界口径混淆。
+
 ## 1.0.0
 
 - 新增纯 Python 3.10+ 独立 `.elibz2` BBox 批量导出工具，运行时不依赖嘉立创 EDA。

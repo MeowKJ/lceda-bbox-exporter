@@ -1,4 +1,5 @@
 import type { BBoxExportRow } from './core';
+import JSZip from 'jszip';
 import * as extensionConfig from '../extension.json';
 import { makeBBoxRow, rowsToCsv, SCHEMATIC_BBOX_UNIT_TO_MM, truthRowsToCsv } from './core';
 
@@ -21,6 +22,13 @@ const PCB_CONTEXT_MENU_TIMER_KEY = '__lcedaBBoxExporterPcbContextMenuTimer';
 const PCB_CONTEXT_MENU_COMMAND = `runRegisteredExtensionFn(${extensionConfig.uuid}.exportSelectedBBoxCsv)`;
 const PCB_CONTEXT_MENU_EXPORT_TITLE = '导出选中 PCB 器件 BBox CSV';
 const PCB_CONTEXT_MENU_RETRY_MS = 1000;
+const MOUNTED_TRUTH_FOOTPRINT_KEY = '__lcedaBBoxExporterMountedTruthFootprint';
+
+interface MountedTruthFootprint {
+	libraryUuid: string;
+	name: string;
+	uuid: string;
+}
 
 interface SchematicContextMenuState {
 	cmdKey?: string;
@@ -556,6 +564,108 @@ export async function exportCurrentFootprintTruthCsv(): Promise<void> {
 			'footprint-bbox-truth.csv',
 		);
 		eda.sys_Message.showToastMessage('已导出当前封装官方真值 CSV。', ESYS_ToastMessageType.SUCCESS);
+	});
+}
+
+/**
+ * 开发期 PCB 0° 真值导出：在当前 PCB 的固定坐标创建外部库封装临时副本，
+ * 读取官方器件 BBox 后立即删除。固定坐标可避免四位小数结果随现有器件位置变化。
+ */
+export async function exportCurrentFootprintPcbTruthCsv(): Promise<void> {
+	await runExport(async () => {
+		const documentInfo = await eda.dmt_SelectControl.getCurrentDocumentInfo();
+		if (!documentInfo || documentInfo.documentType !== EDMT_EditorDocumentType.PCB)
+			throw new Error('请先切换到一个可写 PCB 文档。');
+		const mounted = (globalThis as unknown as Record<string, unknown>)[MOUNTED_TRUTH_FOOTPRINT_KEY] as MountedTruthFootprint | undefined;
+		if (!mounted)
+			throw new Error('请先在封装页执行“开发：挂载 .elibz2 真值库”，再切回 PCB。');
+		const footprint = await eda.lib_Footprint.get(mounted.uuid, mounted.libraryUuid);
+		if (!footprint)
+			throw new Error('无法从已挂载的外部库读取封装索引。');
+		const temporary = await eda.pcb_PrimitiveComponent.create(
+			footprint,
+			EPCB_LayerId.TOP,
+			1_000_000,
+			1_000_000,
+			0,
+			true,
+		);
+		if (!temporary)
+			throw new Error('请先切换到一个可写 PCB 文档，再执行 PCB 0° 真值导出。');
+		let bbox: Awaited<ReturnType<typeof eda.pcb_Primitive.getPrimitivesBBox>>;
+		try {
+			bbox = await eda.pcb_Primitive.getPrimitivesBBox([temporary]);
+		}
+		finally {
+			await eda.pcb_PrimitiveComponent.delete(temporary);
+		}
+		if (!bbox)
+			throw new Error('临时 PCB 器件没有可读取的官方 BBox。');
+		await eda.sys_FileSystem.saveFile(
+			new Blob([truthRowsToCsv([{
+				bbox,
+				footprintName: footprint.name ?? mounted.name,
+				footprintUuid: mounted.uuid,
+				edaVersion: eda.sys_Environment.getEditorCurrentVersion(),
+				extensionVersion: extensionConfig.version,
+			}])], { type: 'text/csv;charset=utf-8' }),
+			'footprint-pcb-zero-truth.csv',
+		);
+	});
+}
+
+/** 使用公开外部库 API 挂载一个 .elibz2，供开发期官方真值抽样。 */
+export async function mountElibz2TruthLibrary(): Promise<void> {
+	await runExport(async () => {
+		const selected = await eda.sys_FileSystem.openReadFileDialog('elibz2', false);
+		const file = Array.isArray(selected) ? selected[0] : selected;
+		if (!file)
+			return;
+		const archive = await JSZip.loadAsync(await file.arrayBuffer());
+		const metadataEntry = Object.values(archive.files).find(entry => /(?:^|\/)footprint2\.json$/i.test(entry.name));
+		const elibuEntry = Object.values(archive.files).find(entry => entry.name.toLowerCase().endsWith('.elibu'));
+		if (!metadataEntry || !elibuEntry)
+			throw new Error('所选 .elibz2 缺少 footprint2.json 或 .elibu。');
+		const metadata = JSON.parse(await metadataEntry.async('text')) as {
+			footprints?: Record<string, { display_title?: string; title?: string }>;
+		};
+		const [footprintUuid, footprintMetadata] = Object.entries(metadata.footprints ?? {})[0] ?? [];
+		if (!footprintUuid || !footprintMetadata)
+			throw new Error('所选 .elibz2 没有可挂载的封装元数据。');
+		const footprintName = footprintMetadata.display_title ?? footprintMetadata.title ?? footprintUuid;
+		const item = {
+			data: await elibuEntry.async('blob'),
+			name: footprintName,
+			uuid: footprintUuid,
+		};
+		const libraryUuid = await eda.lib_LibrariesList.registerExtendLibrary(
+			`BBox 真值临时库 - ${footprintName}`,
+			{
+				footprint: {
+					getClassificationTree: async () => [],
+					getDetail: async uuid => uuid === footprintUuid ? item : undefined,
+					getList: async () => ({ count: 1, lists: [item], page: 1, pageSize: 1, totalPage: 1 }),
+				},
+			},
+		);
+		if (!libraryUuid)
+			throw new Error('嘉立创 EDA 未返回临时外部库 UUID。');
+		(globalThis as unknown as Record<string, unknown>)[MOUNTED_TRUTH_FOOTPRINT_KEY] = {
+			libraryUuid,
+			name: footprintName,
+			uuid: footprintUuid,
+		} satisfies MountedTruthFootprint;
+		const tabId = await eda.dmt_EditorControl.openLibraryDocument(
+			libraryUuid,
+			ELIB_LibraryType.FOOTPRINT,
+			footprintUuid,
+		);
+		if (!tabId)
+			throw new Error('临时外部库已注册，但嘉立创 EDA 未能打开封装文档。');
+		eda.sys_Message.showToastMessage(
+			`已挂载并打开 ${footprintName}（${footprintUuid}）。`,
+			ESYS_ToastMessageType.SUCCESS,
+		);
 	});
 }
 

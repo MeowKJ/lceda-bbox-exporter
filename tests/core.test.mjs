@@ -68,6 +68,8 @@ test('exposes CSV-only export commands', () => {
 	assert.equal(typeof api.exportAllComponentBBoxCsv, 'function');
 	assert.equal(typeof api.exportCurrentFootprintLibraryBBoxCsv, 'function');
 	assert.equal(typeof api.exportCurrentFootprintTruthCsv, 'function');
+	assert.equal(typeof api.exportCurrentFootprintPcbTruthCsv, 'function');
+	assert.equal(typeof api.mountElibz2TruthLibrary, 'function');
 	assert.equal(api.rowsToJson, undefined);
 });
 
