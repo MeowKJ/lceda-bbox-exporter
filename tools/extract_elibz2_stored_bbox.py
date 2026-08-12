@@ -55,6 +55,33 @@ def read_json_member(archive: zipfile.ZipFile, name: str) -> dict[str, Any]:
         raise ValueError(f'无法读取 {name}。') from error
 
 
+def read_device_document(archive: zipfile.ZipFile) -> dict[str, Any] | None:
+    """Read optional device metadata without making it a BBox prerequisite.
+
+    EasyEDA exports have used both a root-level ``device2.json`` and other
+    nested/device JSON layouts.  The BBox itself is persisted in ``.elibu``;
+    this metadata is only used to make the CSV labels friendlier.
+    """
+    members = archive.namelist()
+    preferred = [
+        name for name in members
+        if name.lower().rsplit('/', 1)[-1] == 'device2.json'
+    ]
+    alternatives = [
+        name for name in members
+        if name.lower().endswith('.json') and name not in preferred
+        and 'device' in name.lower().rsplit('/', 1)[-1]
+    ]
+    for name in [*preferred, *alternatives]:
+        try:
+            document = read_json_member(archive, name)
+        except ValueError:
+            continue
+        if isinstance(document, dict):
+            return document
+    return None
+
+
 def read_elibu_objects(archive: zipfile.ZipFile) -> list[dict[str, Any]]:
     members = [name for name in archive.namelist() if name.lower().endswith('.elibu')]
     if len(members) != 1:
@@ -103,7 +130,9 @@ def find_stored_bboxes(objects: list[dict[str, Any]]) -> list[StoredBBox]:
     return records
 
 
-def device_labels(document: dict[str, Any]) -> tuple[str, str]:
+def device_labels(document: dict[str, Any] | None) -> tuple[str, str]:
+    if document is None:
+        return '', ''
     devices = document.get('devices', {})
     device = next(iter(devices.values()), {}) if isinstance(devices, dict) else {}
     attributes = device.get('attributes', {}) if isinstance(device, dict) else {}
@@ -119,7 +148,7 @@ def export_stored_part_bboxes(input_path: Path, output_path: Path) -> list[Store
     if not zipfile.is_zipfile(input_path):
         raise ValueError('输入文件不是有效的 .elibz2 ZIP 压缩包。')
     with zipfile.ZipFile(input_path) as archive:
-        document = read_json_member(archive, 'device2.json')
+        document = read_device_document(archive)
         stored_bboxes = find_stored_bboxes(read_elibu_objects(archive))
 
     # PART.BBOX is explicitly persisted in the known .elibz2 format and uses
@@ -134,7 +163,16 @@ def export_stored_part_bboxes(input_path: Path, output_path: Path) -> list[Store
         writer = csv.writer(output)
         writer.writerow(CSV_HEADER)
         for bbox in part_bboxes:
-            writer.writerow([designator, footprint_name, bbox.x_length_mm, bbox.y_width_mm, ''])
+            # Some library-only exports do not contain device metadata.  The
+            # record title is still persisted by EasyEDA, so use it only as a
+            # label fallback; never use it to calculate a BBox.
+            writer.writerow([
+                designator,
+                footprint_name or bbox.title,
+                bbox.x_length_mm,
+                bbox.y_width_mm,
+                '',
+            ])
     return part_bboxes
 
 
@@ -211,7 +249,11 @@ def run_gui() -> int:
     frame = tk.Frame(root, padx=12, pady=12)
     frame.pack(fill='both', expand=True)
     tk.Label(frame, text='从嘉立创 .elibz2 读取已存储的 PART.BBOX', anchor='w').pack(fill='x', pady=(0, 4))
-    tk.Label(frame, text='不手算封装外框；缺少已存储 BBox 时会明确提示。', anchor='w').pack(fill='x', pady=(0, 12))
+    tk.Label(
+        frame,
+        text='不手算封装外框；device2.json 缺失时仍可导出已存储 BBox。',
+        anchor='w',
+    ).pack(fill='x', pady=(0, 12))
     tk.Button(frame, text='1. 选择 .elibz2 文件…', command=choose_input, height=2).pack(fill='x', pady=(0, 12))
     tk.Label(frame, text='输入文件', anchor='w').pack(fill='x')
     tk.Entry(frame, textvariable=input_var, relief='sunken', bd=1).pack(fill='x', pady=(2, 6))
