@@ -104,6 +104,83 @@ class GeometryTests(unittest.TestCase):
         })
         self.assertBBox(tool.primitive_bbox(record), (-5, -2, 5, 2))
 
+    def test_multilayer_hole_object_uses_hole_type(self):
+        record = tool.Record("PAD", "p", 1, "", {
+            "layerId": 12, "centerX": 0, "centerY": 0, "padAngle": 0,
+            "defaultPad": {"padType": "ELLIPSE", "width": 10, "height": 10}, "specialPad": [],
+            "hole": {"holeType": "ROUND", "width": 20, "height": 20},
+            "relativeAngle": 0, "padOffsetX": 0, "padOffsetY": 0,
+        })
+        self.assertBBox(tool.primitive_bbox(record), (-10, -10, 10, 10))
+
+    def test_slot_hole_uses_oval_bounds(self):
+        record = tool.Record("PAD", "p", 1, "", {
+            "layerId": 12, "centerX": 0, "centerY": 0, "padAngle": 0,
+            "defaultPad": {"padType": "RECT", "width": 4, "height": 4}, "specialPad": [],
+            "hole": {"holeType": "SLOT", "width": 20, "height": 6},
+            "relativeAngle": 90, "padOffsetX": 0, "padOffsetY": 0,
+        })
+        self.assertBBox(tool.primitive_bbox(record), (-3, -10, 3, 10))
+
+    def test_polygon_pad_alias(self):
+        record = tool.Record("PAD", "p", 1, "", {
+            "layerId": 1, "centerX": 10, "centerY": 20, "padAngle": 0,
+            "defaultPad": {"padType": "POLYGON", "path": [0, 0, "L", 4, 0, 4, 6, 0, 6]},
+            "specialPad": [],
+        })
+        self.assertBBox(tool.primitive_bbox(record), (10, 20, 14, 26))
+
+    def test_image_absolute_path_does_not_require_position(self):
+        record = tool.Record("IMAGE", "i", 1, "", {
+            "startX": -5, "startY": 10, "width": 20, "height": 20,
+            "path": [[-5, 10, "L", 15, 10, 15, -10, -5, -10]],
+            "angle": 0,
+        })
+        self.assertBBox(tool.primitive_bbox(record), (-5, -10, 15, 10))
+
+    def test_default_string_reconstructs_width_and_left_bottom_origin(self):
+        record = tool.Record("STRING", "s", 1, "", {
+            "layerId": 3, "x": -80.04, "y": -162.465, "text": "1",
+            "fontFamily": "default", "fontSize": 39.37, "strokeWidth": 8,
+            "origin": "LEFT_BOTTOM", "angle": 0, "mirror": False,
+        })
+        self.assertBBox(tool.primitive_bbox(record), (-80.04, -162.465, -71.0922727273, -123.095))
+
+    def test_default_string_left_middle_origin(self):
+        record = tool.Record("STRING", "s", 1, "", {
+            "layerId": 3, "x": 10, "y": 20, "text": "AC",
+            "fontFamily": "default", "fontSize": 80, "strokeWidth": 8,
+            "origin": "LEFT_MIDDLE", "angle": 0, "mirror": False,
+        })
+        self.assertBBox(tool.primitive_bbox(record), (10, -20, 138.7272727273, 60))
+
+    def test_string_without_portable_font_metrics_fails_closed(self):
+        record = tool.Record("STRING", "s", 1, "", {
+            "layerId": 3, "x": 0, "y": 0, "text": "字",
+            "fontFamily": "NotoSansCJKsc-DemiLight", "fontSize": 40, "strokeWidth": 4,
+            "origin": 3, "angle": 0, "mirror": False,
+        })
+        with self.assertRaisesRegex(tool.ToolError, "缺少可移植字体度量"):
+            tool.primitive_bbox(record)
+
+    def test_exported_font_document_supplies_nondefault_string_dimensions(self):
+        string = ({"type": "STRING", "id": "s", "ticket": 2}, {
+            "layerId": 3, "x": 0, "y": 0, "text": "灵",
+            "fontFamily": "NotoSerifCJKsc-Medium", "fontSize": 78.74, "strokeWidth": 8,
+            "bold": False, "italic": False, "origin": "LEFT_BOTTOM", "angle": 90,
+            "reverse": False, "expansion": 0, "mirror": False,
+        })
+        font_head = pair({"type": "DOCHEAD"}, {"docType": "FONT", "uuid": "FONT", "editVersion": "3.2.91"})
+        font_id = json.dumps(["灵", "NotoSerifCJKsc-Medium", 7.874, 8, 0, 0, 0, 0], separators=(",", ":"))
+        font = pair({"type": "FONT", "id": font_id, "ticket": 1}, {"width": 65.5, "height": 78.74, "path": []})
+        with tempfile.TemporaryDirectory() as directory:
+            archive = Path(directory) / "font.elibz2"
+            write_archive(archive, {"font.elibu": document(records=[string]) + font_head + font})
+            rows, audits = tool.process_archive(archive)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual((rows[0].x_mm, rows[0].y_mm), (2.0, 1.6637))
+        self.assertEqual(audits[0].status, "SUCCESS")
+
     def test_special_pad_is_merged(self):
         record = tool.Record("PAD", "p", 1, "", {
             "layerId": 12, "centerX": 0, "centerY": 0, "padAngle": 0,

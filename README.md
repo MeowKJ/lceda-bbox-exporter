@@ -71,6 +71,8 @@ python3 tools/elibz2_bbox_tool.py library.elibz2 ./libraries -o result.csv --for
 
 当前声明支持嘉立创 EDA 专业版 3.2 系列导出的 V3 键值 `.elibz2`。其他格式版本必须先增加官方真值回归，不能按近似模式放行。
 
+解析器兼容 V3 的 `holeType` 对象孔、`POLYGON` 焊盘、`SLOT` 槽孔和绝对路径 IMAGE。文字优先使用归档 FONT 文档中的官方缓存宽高；旧归档缺少默认字体缓存时，使用固定的 V3 默认字体度量。下载目录实测 2097 个归档、12300 个封装全部转换成功。
+
 ## 嘉立创 EDA 官方真值扩展
 
 扩展使用官方 `getPrimitivesBBox()` API，可在 PCB、封装和原理图环境导出五列 CSV。PCB 器件统一按关联封装的官方 0° BBox 输出，不受板上随机旋转影响。
@@ -90,7 +92,7 @@ npm install
 npm run check
 ```
 
-扩展包生成于 `build/dist/lceda-bbox-exporter_v1.0.3.eext`。在嘉立创 EDA 专业版中进入“高级 → 扩展管理器 → 导入”安装。
+扩展包生成于 `build/dist/lceda-bbox-exporter_v1.0.4.eext`。在嘉立创 EDA 专业版中进入“高级 → 扩展管理器 → 导入”安装。
 
 ## 旧 `PART.BBOX` 提取脚本
 

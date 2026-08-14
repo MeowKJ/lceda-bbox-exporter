@@ -22,7 +22,7 @@ import threading
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath, PureWindowsPath
-from typing import Any, Callable, Iterable, Iterator, Sequence
+from typing import Any, Callable, Iterable, Iterator, Mapping, Sequence
 
 
 MIL_TO_MM = 0.0254
@@ -57,6 +57,26 @@ IGNORED_LAYER_TYPES = {
     "COMPONENT_MARKING",
     "PIN_SOLDERING",
     "PIN_FLOATING",
+}
+
+# A V3 STRING can omit width/height. Exported FONT documents are authoritative;
+# these compact built-in-font right-edge metrics cover older archives that omit
+# their cache without bundling any font outlines.
+DEFAULT_STROKE_FONT_RIGHT = {
+    "!": 2, '"': 8, "#": 15, "$": 14, "%": 18, "&": 20, "'": 2,
+    "`": 4, "(": 7, ")": 7, "*": 10, "+": 18, ",": 2, "-": 18,
+    ".": 2, "/": 18, "0": 14, "1": 5, "2": 14, "3": 14, "4": 15,
+    "5": 14, "6": 13, "7": 14, "8": 14, "9": 13, ":": 2, ";": 2,
+    "<": 16, "=": 18, ">": 16, "?": 12, "@": 21, "A": 16, "B": 14,
+    "C": 15, "D": 14, "E": 13, "F": 13, "G": 15, "H": 14, "I": 0,
+    "J": 10, "K": 14, "L": 12, "M": 16, "N": 14, "O": 16, "P": 14,
+    "Q": 16, "R": 14, "S": 14, "T": 14, "U": 14, "V": 16, "W": 20,
+    "X": 14, "Y": 16, "Z": 14, "[": 7, "\\": 14, "]": 7, "^": 16,
+    "_": 18, "a": 12, "b": 12, "c": 12, "d": 12, "e": 12, "f": 8,
+    "g": 12, "h": 11, "i": 2, "j": 6, "k": 11, "l": 0, "m": 22,
+    "n": 11, "o": 13, "p": 12, "q": 12, "r": 8, "s": 11, "t": 8,
+    "u": 11, "v": 12, "w": 16, "x": 11, "y": 13, "z": 11,
+    "{": 5, "|": 0, "}": 5, "~": 18, "°": 6, "Ω": 20, "μ": 12,
 }
 NON_GEOMETRY_TYPES = {
     "ACTIVE_LAYER",
@@ -403,7 +423,7 @@ def _pad_shape_bbox(shape: Any, center: tuple[float, float], angle: float) -> BB
     if not isinstance(shape, dict):
         raise ToolError("MISSING_GEOMETRY", "焊盘形状不是对象。")
     pad_type = str(shape.get("padType", "")).upper()
-    if pad_type in {"ROUND", "OVAL", "ELLIPSE"}:
+    if pad_type in {"ROUND", "OVAL", "ELLIPSE", "SLOT"}:
         return _oval_bbox(center, _number(shape.get("width"), "pad.width"), _number(shape.get("height"), "pad.height"), angle)
     if pad_type == "RECT":
         return _rectangle_bbox(center, _number(shape.get("width"), "pad.width"), _number(shape.get("height"), "pad.height"), angle)
@@ -417,13 +437,103 @@ def _pad_shape_bbox(shape: Any, center: tuple[float, float], angle: float) -> BB
             _transform((radius * math.cos(2 * math.pi * i / sides), radius * math.sin(2 * math.pi * i / sides)), angle, center)
             for i in range(sides)
         ])
-    if pad_type == "POLY":
+    if pad_type in {"POLY", "POLYGON"}:
         path = shape.get("path", shape.get("paths", shape.get("polygon")))
         return path_bbox(path, angle=angle, offset=center)
     raise ToolError("UNSUPPORTED_PAD", f"不支持的焊盘形状：{pad_type or '<empty>'}。")
 
 
-def primitive_bbox(record: Record) -> BBox | None:
+FontMetricKey = tuple[str, str, float, float, bool, bool, bool, float]
+
+
+def _font_metric_key(
+    text: str,
+    font_family: str,
+    font_size_tenths: float,
+    stroke_width: float,
+    bold: bool,
+    italic: bool,
+    reverse: bool,
+    expansion: float,
+) -> FontMetricKey:
+    return (
+        text, font_family, round(font_size_tenths, 6), round(stroke_width, 6),
+        bold, italic, reverse, round(expansion, 6),
+    )
+
+
+def _default_string_dimensions(text: str, font_size: float, stroke_width: float) -> tuple[float, float]:
+    if font_size <= 0 or stroke_width < 0:
+        raise ToolError("INVALID_GEOMETRY", "默认字体字号或线宽无效。")
+    # V3's cached default stroke-font boxes use a 22-unit horizontal grid.
+    # Inter-character spacing is the line width plus one tenth of the font size.
+    scale = font_size / 22
+    line_widths: list[float] = []
+    for line in text.split("\n"):
+        cursor = 0.0
+        right_edge = 0.0
+        for character in line:
+            if character == " ":
+                cursor += font_size * 0.7
+                continue
+            glyph_right = DEFAULT_STROKE_FONT_RIGHT.get(character)
+            if glyph_right is None:
+                raise ToolError("UNSUPPORTED_FONT_GLYPH", f"默认字体不支持字符：{character!r}。")
+            right_edge = max(right_edge, cursor + glyph_right * scale)
+            cursor = right_edge + stroke_width + font_size * 0.1
+        line_widths.append(right_edge)
+    return max(line_widths, default=0.0), font_size * max(1, len(line_widths))
+
+
+def _string_origin_factors(origin: Any) -> tuple[float, float]:
+    names = {
+        "LEFT_TOP": 1, "LEFT_MIDDLE": 2, "LEFT_CENTER": 2, "LEFT_BOTTOM": 3,
+        "CENTER_TOP": 4, "CENTER": 5, "CENTER_CENTER": 5, "CENTER_MIDDLE": 5, "CENTER_BOTTOM": 6,
+        "RIGHT_TOP": 7, "RIGHT_MIDDLE": 8, "RIGHT_CENTER": 8, "RIGHT_BOTTOM": 9,
+    }
+    if isinstance(origin, str):
+        origin = names.get(origin.upper())
+    if not isinstance(origin, int) or not 1 <= origin <= 9:
+        raise ToolError("INVALID_GEOMETRY", "文字 origin 无效。")
+    column = (origin - 1) // 3
+    row = (origin - 1) % 3
+    return (-column / 2, -(2 - row) / 2)
+
+
+def _string_bbox(
+    data: dict[str, Any],
+    angle: float,
+    position: tuple[float, float],
+    font_metrics: Mapping[FontMetricKey, tuple[float, float]] | None,
+) -> BBox:
+    font_family = str(data.get("fontFamily", "default") or "default")
+    if data.get("mirror"):
+        raise ToolError("UNSUPPORTED_TEXT_MIRROR", "暂不支持缺少显式宽高的镜像文字。")
+    text = str(data.get("text", ""))
+    font_size = _number(data.get("fontSize"), "STRING.fontSize")
+    stroke_width = _number(data.get("strokeWidth"), "STRING.strokeWidth")
+    metric_key = _font_metric_key(
+        text, font_family, font_size / 10, stroke_width,
+        bool(data.get("bold")), bool(data.get("italic")), bool(data.get("reverse")),
+        _optional_number(data.get("expansion")),
+    )
+    dimensions = font_metrics.get(metric_key) if font_metrics else None
+    if dimensions is not None:
+        width, height = dimensions
+    elif font_family == "default":
+        width, height = _default_string_dimensions(text, font_size, stroke_width)
+    else:
+        raise ToolError("UNSUPPORTED_FONT", f"缺少可移植字体度量：{font_family}。")
+    offset_x, offset_y = _string_origin_factors(data.get("origin", 3))
+    local_center = ((offset_x + 0.5) * width, (offset_y + 0.5) * height)
+    center = _transform(local_center, angle, position)
+    return _rectangle_bbox(center, width, height, angle)
+
+
+def primitive_bbox(
+    record: Record,
+    font_metrics: Mapping[FontMetricKey, tuple[float, float]] | None = None,
+) -> BBox | None:
     data = record.data
     if data is None:
         return None
@@ -464,6 +574,10 @@ def primitive_bbox(record: Record) -> BBox | None:
             hole_angle = _optional_number(data.get("relativeAngle"))
             if isinstance(hole, dict):
                 normalized = dict(hole)
+                # Current V3 archives name the discriminator `holeType`, while
+                # the common pad geometry helper consumes `padType`.
+                if "padType" not in normalized and "holeType" in normalized:
+                    normalized["padType"] = normalized["holeType"]
             elif isinstance(hole, list) and len(hole) >= 3:
                 normalized = {"padType": hole[0], "width": hole[1], "height": hole[2]}
             else:
@@ -480,6 +594,10 @@ def primitive_bbox(record: Record) -> BBox | None:
     if kind in {"IMAGE", "OBJ", "STRING", "ATTR"}:
         path = data.get("path")
         angle = _optional_number(data.get("angle", data.get("rotation")))
+        # Exported IMAGE paths use document coordinates and may omit a separate
+        # position.  In that representation the path itself is authoritative.
+        if kind == "IMAGE" and path and data.get("positionX") is None and data.get("x") is None and data.get("centerX") is None:
+            return path_bbox(path)
         position = _point(
             data.get("positionX", data.get("x", data.get("centerX"))),
             data.get("positionY", data.get("y", data.get("centerY"))),
@@ -487,24 +605,15 @@ def primitive_bbox(record: Record) -> BBox | None:
         )
         if path:
             return path_bbox(path, angle=angle, offset=position)
+        if kind == "STRING":
+            return _string_bbox(data, angle, position, font_metrics)
         width = _number(data.get("width"), f"{kind}.width")
         height = _number(data.get("height"), f"{kind}.height")
-        # V3 STRING origin 0..8 is column + 3*row.  Other image/OBJ records
-        # are represented around their explicit center in the public format.
-        if kind in {"STRING", "ATTR"}:
-            origin = data.get("origin", 4)
-            if isinstance(origin, str):
-                origin_map = {
-                    "LEFT_TOP": 0, "CENTER_TOP": 1, "RIGHT_TOP": 2,
-                    "LEFT_CENTER": 3, "CENTER_CENTER": 4, "RIGHT_CENTER": 5,
-                    "LEFT_BOTTOM": 6, "CENTER_BOTTOM": 7, "RIGHT_BOTTOM": 8,
-                }
-                origin = origin_map.get(origin, 4)
-            if not isinstance(origin, int) or not 0 <= origin <= 8:
-                raise ToolError("INVALID_GEOMETRY", "文字 origin 无效。")
-            dx = (1 - origin % 3) * width / 2
-            dy = (1 - origin // 3) * height / 2
-            center = _transform((dx, dy), angle, position)
+        # V3 text alignment uses the public 1..9 left/center/right and
+        # top/middle/bottom enum. Other image/OBJ records use an explicit center.
+        if kind == "ATTR":
+            offset_x, offset_y = _string_origin_factors(data.get("origin", 3))
+            center = _transform(((offset_x + 0.5) * width, (offset_y + 0.5) * height), angle, position)
         else:
             center = position
         return _rectangle_bbox(center, width, height, angle)
@@ -540,17 +649,20 @@ def _record_from_pair(header: Any, data: Any) -> Record:
     return Record(kind, record_id, ticket, client, payload)
 
 
-def parse_elibu(content: str) -> list[FootprintDocument]:
+def parse_elibu(content: str, font_records: dict[str, Record] | None = None) -> list[FootprintDocument]:
     objects = list(_iter_json_objects(content))
     if len(objects) % 2:
         raise ToolError("INVALID_ELIBU", ".elibu 日志记录头和数据没有成对出现。")
     documents: dict[str, FootprintDocument] = {}
     current: FootprintDocument | None = None
+    in_font_document = False
     for header, data in zip(objects[::2], objects[1::2]):
         if isinstance(header, dict) and str(header.get("type", "")).upper() == "DOCHEAD":
             if not isinstance(data, dict):
                 raise ToolError("INVALID_ELIBU", "DOCHEAD 数据无效。")
-            if str(data.get("docType", "")).upper() != "FOOTPRINT":
+            document_type = str(data.get("docType", "")).upper()
+            in_font_document = document_type == "FONT"
+            if document_type != "FOOTPRINT":
                 current = None
                 continue
             uuid = str(data.get("uuid", ""))
@@ -561,6 +673,17 @@ def parse_elibu(content: str) -> list[FootprintDocument]:
             if edit_version:
                 current.edit_version = edit_version
             continue
+        if in_font_document:
+            record = _record_from_pair(header, data)
+            if font_records is not None and record.type == "FONT":
+                previous = font_records.get(record.id)
+                if (
+                    previous is None
+                    or record.ticket > previous.ticket
+                    or (record.ticket == previous.ticket and record.client < previous.client)
+                ):
+                    font_records[record.id] = record
+            continue
         if current is None:
             continue
         record = _record_from_pair(header, data)
@@ -569,6 +692,30 @@ def parse_elibu(content: str) -> list[FootprintDocument]:
             continue
         current.merge(record)
     return [document for document in documents.values() if not document.deleted]
+
+
+def _font_metrics(records: Mapping[str, Record]) -> dict[FontMetricKey, tuple[float, float]]:
+    metrics: dict[FontMetricKey, tuple[float, float]] = {}
+    for record in records.values():
+        if record.data is None:
+            continue
+        try:
+            identity = json.loads(record.id)
+            if not isinstance(identity, list) or len(identity) < 8:
+                continue
+            width = _number(record.data.get("width"), "FONT.width")
+            height = _number(record.data.get("height"), "FONT.height")
+            if width < 0 or height < 0:
+                continue
+            key = _font_metric_key(
+                str(identity[0]), str(identity[1]), _number(identity[2], "FONT.fontSize"),
+                _number(identity[3], "FONT.strokeWidth"), bool(identity[4]), bool(identity[5]),
+                bool(identity[6]), _optional_number(identity[7]),
+            )
+        except (ToolError, TypeError, ValueError, json.JSONDecodeError):
+            continue
+        metrics[key] = (width, height)
+    return metrics
 
 
 def _safe_members(archive: zipfile.ZipFile) -> list[zipfile.ZipInfo]:
@@ -656,7 +803,12 @@ def _layer_types(records: Iterable[Record]) -> dict[int, str]:
     return result
 
 
-def _document_row(path: Path, document: FootprintDocument, metadata: Sequence[dict[str, Any]]) -> ExportRow:
+def _document_row(
+    path: Path,
+    document: FootprintDocument,
+    metadata: Sequence[dict[str, Any]],
+    font_metrics: Mapping[FontMetricKey, tuple[float, float]],
+) -> ExportRow:
     if not document.edit_version or not SUPPORTED_EDIT_VERSION.match(document.edit_version):
         raise ToolError("UNSUPPORTED_VERSION", f"不支持的格式版本：{document.edit_version or '<empty>'}。")
     live_records = [record for record in document.records.values() if record.data is not None]
@@ -673,7 +825,7 @@ def _document_row(path: Path, document: FootprintDocument, metadata: Sequence[di
             continue
         if record.type == "ATTR" and str(data.get("key", "")):
             continue
-        box = primitive_bbox(record)
+        box = primitive_bbox(record, font_metrics)
         if box is not None:
             boxes.append(box)
             primitive_types.add(record.type)
@@ -699,12 +851,14 @@ def process_archive(path: Path) -> tuple[list[ExportRow], list[AuditRow]]:
                 raise ToolError("NO_ELIBU", "归档中没有 .elibu 文件。")
             metadata = _read_metadata(archive, members)
             documents: list[FootprintDocument] = []
+            font_records: dict[str, Record] = {}
             for member in elibu_members:
                 try:
                     content = archive.read(member).decode("utf-8")
                 except UnicodeDecodeError as error:
                     raise ToolError("INVALID_ELIBU", f"{member.filename} 不是 UTF-8。") from error
-                documents.extend(parse_elibu(content))
+                documents.extend(parse_elibu(content, font_records))
+            font_metrics = _font_metrics(font_records)
         if not documents:
             raise ToolError("NO_FOOTPRINT", "归档中没有有效的 FOOTPRINT 文档。")
         # Different .elibu members may carry successive chunks for one UUID.
@@ -717,7 +871,7 @@ def process_archive(path: Path) -> tuple[list[ExportRow], list[AuditRow]]:
                 target.merge(record)
         for document in merged.values():
             try:
-                row = _document_row(path, document, metadata)
+                row = _document_row(path, document, metadata, font_metrics)
                 rows.append(row)
                 audits.append(AuditRow(
                     input_path=path,
