@@ -54,7 +54,7 @@ python3 tools/elibz2_bbox_tool.py library.elibz2 ./libraries -o result.csv --for
 - `Y-Width`；
 - `Z-Height`。
 
-同时生成 `<主文件名>-audit.csv`，按“封装、X/Y/Z、UUID、格式/图元、Min/Max、输入路径、错误信息、状态”排列。不生成 JSON。`Min X / Min Y` 是 BBox 左/下最小边界，`Max X / Max Y` 是右/上最大边界；它们用于校验 `X = Max X - Min X`、`Y = Max Y - Min Y`，属于审计参数而非最终交付尺寸列。
+同时生成 `<主文件名>-audit.csv`，按“封装、X/Y/Z、UUID、格式/图元、输入路径、错误信息、状态”排列。不生成 JSON，也不输出 Min/Max 原始坐标。
 
 `Z-Height` 只在关联设备的 `3D Model Title` 明确包含 `H3.4` 一类参数时填写。缺少高度或存在多个冲突高度时留空。
 
@@ -91,7 +91,7 @@ npm install
 npm run check
 ```
 
-扩展包生成于 `build/dist/lceda-bbox-exporter_v1.0.2.eext`。在嘉立创 EDA 专业版中进入“高级 → 扩展管理器 → 导入”安装。
+扩展包生成于 `build/dist/lceda-bbox-exporter_v1.0.3.eext`。在嘉立创 EDA 专业版中进入“高级 → 扩展管理器 → 导入”安装。
 
 ## 旧 `PART.BBOX` 提取脚本
 

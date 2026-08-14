@@ -41,10 +41,6 @@ AUDIT_HEADER = [
     "Footprint UUID",
     "Format Version",
     "Primitive Types",
-    "Min X (mil)",
-    "Min Y (mil)",
-    "Max X (mil)",
-    "Max Y (mil)",
     "Input Path",
     "Error Code",
     "Error Description",
@@ -824,12 +820,9 @@ def write_results(result: BatchResult, output_path: Path, *, force: bool = False
         writer = csv.writer(stream, lineterminator="\r\n")
         writer.writerow(AUDIT_HEADER)
         for row in result.audits:
-            bbox = row.bbox
             writer.writerow([
                 row.footprint, _format_number(row.x_mm), _format_number(row.y_mm), _format_number(row.z_mm),
                 row.footprint_uuid, row.edit_version, ";".join(row.primitive_types),
-                _format_number(bbox.min_x if bbox else None), _format_number(bbox.min_y if bbox else None),
-                _format_number(bbox.max_x if bbox else None), _format_number(bbox.max_y if bbox else None),
                 str(row.input_path), row.error_code, row.description, row.status,
             ])
     return output_path, audit_path

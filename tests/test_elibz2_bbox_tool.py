@@ -256,6 +256,7 @@ class MetadataAndOutputTests(unittest.TestCase):
             with audit_path.open(encoding="utf-8-sig", newline="") as stream:
                 audit_rows = list(csv.reader(stream))
             self.assertEqual(audit_rows[0][:4], ["Footprint", "X-Length (mm)", "Y-Width (mm)", "Z-Height (mm)"])
+            self.assertFalse(any("Min " in column or "Max " in column for column in audit_rows[0]))
             self.assertEqual(audit_rows[0][-1], "Status")
             self.assertEqual(audit_rows[1][-1], "SUCCESS")
 
