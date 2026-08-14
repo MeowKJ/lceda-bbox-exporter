@@ -78,11 +78,10 @@ python3 tools/elibz2_bbox_tool.py library.elibz2 ./libraries -o result.csv --for
 封装编辑器中额外提供“开发：导出当前封装官方真值 CSV”，包含：
 
 - 封装名称和 UUID；
-- 原始 `minX/minY/maxX/maxY`（mil）；
 - X/Y（mm）；
 - EDA 版本和扩展版本。
 
-该命令只用于开发期比较离线解析结果，不是离线工具依赖，也不改变用户五列导出格式。
+原始 Min/Max 只参与内部尺寸计算，不写入真值 CSV。该命令只用于开发期比较离线解析结果，不是离线工具依赖，也不改变用户五列导出格式。
 
 构建需要 Node.js 20.17 或更高版本：
 

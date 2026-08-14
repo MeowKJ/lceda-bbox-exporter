@@ -95,10 +95,6 @@ export function truthRowsToCsv(rows: Array<TruthBBoxRow>): string {
 	const headers = [
 		'Footprint',
 		'Footprint UUID',
-		'Min X (mil)',
-		'Min Y (mil)',
-		'Max X (mil)',
-		'Max Y (mil)',
 		'X-Length (mm)',
 		'Y-Width (mm)',
 		'EDA Version',
@@ -110,10 +106,6 @@ export function truthRowsToCsv(rows: Array<TruthBBoxRow>): string {
 		lines.push([
 			row.footprintName,
 			row.footprintUuid,
-			row.bbox.minX,
-			row.bbox.minY,
-			row.bbox.maxX,
-			row.bbox.maxY,
 			dimensions.xLength,
 			dimensions.yWidth,
 			row.edaVersion,

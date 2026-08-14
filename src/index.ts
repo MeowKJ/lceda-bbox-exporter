@@ -537,8 +537,8 @@ export async function exportCurrentFootprintLibraryBBoxCsv(): Promise<void> {
 }
 
 /**
- * 开发期官方真值导出：保留原始 mil 四边与 EDA/API 版本，供离线解析器
- * 逐项对照。它不改变最终用户五列 CSV，也不是离线工具的运行时依赖。
+ * 开发期官方真值导出：保留最终 X/Y 尺寸与 EDA/API 版本，供离线解析器
+ * 逐项对照。内部四边界只参与计算，不写入 CSV。
  */
 export async function exportCurrentFootprintTruthCsv(): Promise<void> {
 	await runExport(async () => {

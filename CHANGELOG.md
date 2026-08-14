@@ -2,7 +2,7 @@
 
 ## 1.0.3
 
-- 从 audit CSV 中彻底删除 Min X、Min Y、Max X、Max Y 原始坐标，只保留封装与 X/Y/Z 最终尺寸。
+- 从 audit CSV 和开发期官方真值 CSV 中彻底删除 Min X、Min Y、Max X、Max Y 原始坐标，只保留最终尺寸与必要审计信息。
 - 保持关键尺寸在前、状态在最后的 UI 和审计列顺序。
 
 ## 1.0.2
