@@ -34,21 +34,21 @@ CSV_HEADER = [
     "Z-Height",
 ]
 AUDIT_HEADER = [
-    "Input Path",
-    "Footprint UUID",
     "Footprint",
+    "X-Length (mm)",
+    "Y-Width (mm)",
+    "Z-Height (mm)",
+    "Footprint UUID",
     "Format Version",
     "Primitive Types",
-    "Status",
-    "Error Code",
-    "Error Description",
     "Min X (mil)",
     "Min Y (mil)",
     "Max X (mil)",
     "Max Y (mil)",
-    "X-Length (mm)",
-    "Y-Width (mm)",
-    "Z-Height (mm)",
+    "Input Path",
+    "Error Code",
+    "Error Description",
+    "Status",
 ]
 
 MAX_MEMBERS = 4096
@@ -795,6 +795,19 @@ def _format_number(value: float | None) -> str:
     return text.rstrip("0").rstrip(".") if "." in text else text
 
 
+def gui_result_values(audit: AuditRow) -> tuple[str, str, str, str, str, str, str]:
+    """Return the user-facing table row with key dimensions first and status last."""
+    return (
+        audit.footprint,
+        _format_number(audit.x_mm),
+        _format_number(audit.y_mm),
+        _format_number(audit.z_mm),
+        audit.input_path.name,
+        audit.description or audit.error_code,
+        "成功" if audit.status == "SUCCESS" else "失败",
+    )
+
+
 def write_results(result: BatchResult, output_path: Path, *, force: bool = False) -> tuple[Path, Path]:
     audit_path = audit_path_for(output_path)
     if not force:
@@ -813,11 +826,11 @@ def write_results(result: BatchResult, output_path: Path, *, force: bool = False
         for row in result.audits:
             bbox = row.bbox
             writer.writerow([
-                str(row.input_path), row.footprint_uuid, row.footprint, row.edit_version,
-                ";".join(row.primitive_types), row.status, row.error_code, row.description,
+                row.footprint, _format_number(row.x_mm), _format_number(row.y_mm), _format_number(row.z_mm),
+                row.footprint_uuid, row.edit_version, ";".join(row.primitive_types),
                 _format_number(bbox.min_x if bbox else None), _format_number(bbox.min_y if bbox else None),
                 _format_number(bbox.max_x if bbox else None), _format_number(bbox.max_y if bbox else None),
-                _format_number(row.x_mm), _format_number(row.y_mm), _format_number(row.z_mm),
+                str(row.input_path), row.error_code, row.description, row.status,
             ])
     return output_path, audit_path
 
@@ -967,11 +980,19 @@ def run_gui(initial_inputs: Sequence[Path] = ()) -> int:
     ttk.Progressbar(controls, variable=progress_var, maximum=100).grid(row=0, column=0, sticky="ew", padx=(0, 8))
     ttk.Label(controls, textvariable=status_var).grid(row=1, column=0, sticky="w", pady=(4, 0))
 
-    columns = ("file", "footprint", "size", "status", "message")
+    columns = ("footprint", "x", "y", "z", "file", "message", "status")
     results = ttk.Treeview(root, columns=columns, show="headings")
     results.grid(row=4, column=0, sticky="nsew", padx=12, pady=(0, 8))
-    headings = {"file": "输入文件", "footprint": "封装", "size": "X × Y × Z (mm)", "status": "状态", "message": "错误/说明"}
-    widths = {"file": 260, "footprint": 240, "size": 160, "status": 80, "message": 300}
+    headings = {
+        "footprint": "封装",
+        "x": "X 长度 (mm)",
+        "y": "Y 宽度 (mm)",
+        "z": "Z 高度 (mm)",
+        "file": "输入文件",
+        "message": "错误/说明",
+        "status": "状态",
+    }
+    widths = {"footprint": 220, "x": 105, "y": 105, "z": 105, "file": 190, "message": 260, "status": 70}
     for column in columns:
         results.heading(column, text=headings[column])
         results.column(column, width=widths[column], stretch=column in {"file", "footprint", "message"})
@@ -1041,10 +1062,7 @@ def run_gui(initial_inputs: Sequence[Path] = ()) -> int:
                 elif kind == "done":
                     result, written, error = payload
                     for audit in result.audits:
-                        size = ""
-                        if audit.x_mm is not None:
-                            size = f"{_format_number(audit.x_mm)} × {_format_number(audit.y_mm)} × {_format_number(audit.z_mm)}"
-                        results.insert("", tk.END, values=(audit.input_path.name, audit.footprint, size, "成功" if audit.status == "SUCCESS" else "失败", audit.description or audit.error_code))
+                        results.insert("", tk.END, values=gui_result_values(audit))
                     start_button.configure(state=tk.NORMAL)
                     cancel_button.configure(state=tk.DISABLED)
                     if error:

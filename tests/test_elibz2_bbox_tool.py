@@ -205,6 +205,20 @@ class LogAndArchiveTests(unittest.TestCase):
 
 
 class MetadataAndOutputTests(unittest.TestCase):
+    def test_gui_result_puts_key_dimensions_first_and_status_last(self):
+        audit = tool.AuditRow(
+            Path("sample.elibz2"),
+            footprint="C0402",
+            status="SUCCESS",
+            x_mm=1.9,
+            y_mm=1.1517,
+            z_mm=None,
+        )
+        self.assertEqual(
+            tool.gui_result_values(audit),
+            ("C0402", "1.9", "1.1517", "", "sample.elibz2", "", "成功"),
+        )
+
     def test_height_is_read_only_from_linked_3d_model_title(self):
         metadata = [{"devices": {"d": {"attributes": {"Footprint": "fp", "3D Model Title": "PKG_L1-W2-H3.4-X"}}}, "footprints": {"fp": {"display_title": "Named"}}}]
         self.assertEqual(tool._metadata_for_uuid(metadata, "fp"), ("Named", 3.4, ""))
@@ -237,7 +251,13 @@ class MetadataAndOutputTests(unittest.TestCase):
                 rows = list(csv.reader(stream))
             self.assertEqual(rows[0], tool.CSV_HEADER)
             self.assertEqual(rows[1][1], 'A,"B"')
-            self.assertTrue(tool.audit_path_for(output).exists())
+            audit_path = tool.audit_path_for(output)
+            self.assertTrue(audit_path.exists())
+            with audit_path.open(encoding="utf-8-sig", newline="") as stream:
+                audit_rows = list(csv.reader(stream))
+            self.assertEqual(audit_rows[0][:4], ["Footprint", "X-Length (mm)", "Y-Width (mm)", "Z-Height (mm)"])
+            self.assertEqual(audit_rows[0][-1], "Status")
+            self.assertEqual(audit_rows[1][-1], "SUCCESS")
 
     def test_output_refuses_overwrite_without_force(self):
         with tempfile.TemporaryDirectory() as directory:
